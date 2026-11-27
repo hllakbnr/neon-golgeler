@@ -243,6 +243,7 @@ def fonts():
 if __name__ == '__main__':
     polyhaven()
     kenney()
+    characters()   # yalnızca CI testinde iskeletli özel model denemesi için
     fonts()
     with open(os.path.join(ROOT, 'manifest.json'), 'w', encoding='utf-8') as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)

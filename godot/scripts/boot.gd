@@ -243,6 +243,17 @@ func _run_shots() -> void:
 	add_child(ap)
 	await _wait(25)
 	await Game.shot("14_yonetici")
+	# iskeletli özel model testi (admin yuvasına geçici olarak bağla, kaydetme)
+	if FileAccess.file_exists("res://assets/chars/human.glb"):
+		Game.admin.slots["yaya1"] = {"type": "glb", "path": "res://assets/chars/human.glb"}
+		ap.list.select(3)
+		ap._select("yaya1")
+		await _wait(30)
+		await Game.shot("16_ozel_model_yuru")
+		ap.preview.play_once("attack-kick-right", 0.1)
+		await _wait(12)
+		await Game.shot("17_ozel_model_tekme")
+		Game.admin.slots.erase("yaya1")
 	ap.queue_free()
 	await _wait(5)
 	await Game.shot("15_duraklat")
