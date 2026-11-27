@@ -109,6 +109,9 @@ func _process_modification() -> void:
 			continue
 		var b: int = map[part]
 		var delta_model: Basis = rig_b.inverse() * pv.global_transform.basis.orthonormalized()
+		# oyuncak animasyonları abartılı → uzun insan uzuvlarında salınımı yumuşat
+		if part.begins_with("arm") or part.begins_with("leg"):
+			delta_model = Basis(Quaternion.IDENTITY.slerp(delta_model.get_rotation_quaternion(), 0.55))
 		var delta_sk: Basis = Si * delta_model * S
 		var rest_g: Basis = sk.get_bone_global_rest(b).basis.orthonormalized()
 		var target: Basis = delta_sk * rest_g
