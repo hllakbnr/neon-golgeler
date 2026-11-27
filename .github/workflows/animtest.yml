@@ -1,0 +1,24 @@
+name: Animasyon tanı testi
+on: workflow_dispatch
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Godot 4.3
+        run: |
+          wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
+          unzip -q Godot_v4.3-stable_linux.x86_64.zip
+          sudo mv Godot_v4.3-stable_linux.x86_64 /usr/local/bin/godot
+      - name: Varlıklar (yalnızca karakter + animasyon)
+        run: |
+          pip install -q pillow || true
+          python3 godot/tools/fetch_assets.py kenney anim chars > /tmp/fa.txt 2>&1 || true
+          tail -5 /tmp/fa.txt
+      - name: İçe aktar
+        working-directory: godot
+        run: timeout 600 godot --headless --import 2>&1 | grep -iE "error" | head -20 || true
+      - name: Test
+        working-directory: godot
+        run: timeout 300 godot --headless -s res://tools/anim_test.gd 2>&1 | grep -vE "^\s*$" | head -300

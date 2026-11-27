@@ -285,11 +285,11 @@ def fonts():
 
 
 if __name__ == '__main__':
-    polyhaven()
-    kenney()
-    animations()
-    characters()   # yalnızca CI testinde iskeletli özel model denemesi için
-    fonts()
+    only = sys.argv[1:]
+    for name, fn in [('polyhaven', polyhaven), ('kenney', kenney), ('anim', animations), ('chars', characters), ('fonts', fonts)]:
+        # chars: yalnızca CI testinde iskeletli özel model denemesi için
+        if not only or name in only:
+            fn()
     with open(os.path.join(ROOT, 'manifest.json'), 'w', encoding='utf-8') as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
     print(json.dumps(manifest, indent=2, ensure_ascii=False))
