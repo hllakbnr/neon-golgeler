@@ -1,0 +1,47 @@
+; Neon Gölgeler — Godot 4 gerçekçi sürüm (deneme / dikey dilim)
+config_version=5
+
+[application]
+
+config/name="Neon Golgeler"
+config/description="Neon Gölgeler — açık dünya aksiyon-macera"
+run/main_scene="res://scenes/boot.tscn"
+config/features=PackedStringArray("4.3", "Forward Plus")
+boot_splash/bg_color=Color(0.05, 0.03, 0.09, 1)
+boot_splash/show_image=false
+
+[autoload]
+
+Game="*res://scripts/game.gd"
+
+[display]
+
+window/size/viewport_width=1600
+window/size/viewport_height=900
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/vsync/vsync_mode=1
+
+[physics]
+
+common/physics_ticks_per_second=60
+3d/physics_engine="GodotPhysics3D"
+
+[rendering]
+
+anti_aliasing/quality/use_taa=true
+anti_aliasing/quality/screen_space_aa=1
+lights_and_shadows/directional_shadow/size=4096
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=3
+lights_and_shadows/positional_shadow/soft_shadow_filter_quality=2
+environment/defaults/default_clear_color=Color(0.05, 0.03, 0.09, 1)
+textures/vram_compression/import_etc2_astc=true
+textures/default_filters/anisotropic_filtering_level=3
+global_illumination/sdfgi/probe_ray_count=1
+
+[shader_globals]
+
+night={
+"type": "float",
+"value": 0.0
+}

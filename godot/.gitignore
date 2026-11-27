@@ -1,0 +1,7 @@
+.godot/
+build/
+assets/tex/
+assets/models/
+assets/chars/
+assets/fonts/
+assets/manifest.json

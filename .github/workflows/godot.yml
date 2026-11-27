@@ -1,0 +1,62 @@
+name: Godot deneme sürümü (exe + ekran görüntüleri)
+on:
+  push:
+    branches: [main]
+    paths: ['godot/**', '.github/workflows/godot.yml']
+  workflow_dispatch:
+permissions: { contents: write }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Godot 4.3 + dışa aktarma şablonları
+        run: |
+          wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
+          unzip -q Godot_v4.3-stable_linux.x86_64.zip
+          sudo mv Godot_v4.3-stable_linux.x86_64 /usr/local/bin/godot
+          wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz
+          mkdir -p ~/.local/share/godot/export_templates/4.3.stable /tmp/tpl
+          unzip -q Godot_v4.3-stable_export_templates.tpz -d /tmp/tpl
+          mv /tmp/tpl/templates/* ~/.local/share/godot/export_templates/4.3.stable/
+      - name: Ücretsiz varlıkları indir (Poly Haven CC0, three.js MIT, Google Fonts OFL)
+        run: python3 godot/tools/fetch_assets.py
+      - name: Varlıkları içe aktar
+        working-directory: godot
+        run: |
+          timeout 900 godot --headless --import 2>&1 | grep -v "^$" | tail -40 || true
+          timeout 600 godot --headless --editor --quit 2>&1 | grep -iE "error|warning|parse" | head -60 || true
+      - name: Betik denetimi
+        working-directory: godot
+        run: |
+          fail=0
+          for f in scripts/*.gd; do
+            out=$(timeout 60 godot --headless --check-only --script "res://$f" 2>&1 | grep -iE "SCRIPT ERROR|Parse Error|error" | grep -v "Can't open" || true)
+            if [ -n "$out" ]; then echo "== $f"; echo "$out"; fail=1; fi
+          done
+          echo "betik_hata=$fail"
+      - name: Windows .exe dışa aktar
+        working-directory: godot
+        run: |
+          mkdir -p build
+          timeout 900 godot --headless --export-release "Windows Desktop" build/NeonGolgeler.exe 2>&1 | tail -30
+          ls -la build
+      - name: Ekran görüntüleri (yazılım Vulkan)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb mesa-vulkan-drivers libvulkan1 > /dev/null
+          mkdir -p shots
+          timeout 1500 xvfb-run -a -s "-screen 0 1600x900x24" godot --path godot --rendering-driver vulkan --resolution 1600x900 -- --shots=$PWD/shots 2>&1 | grep -vE "^\s*$" | tail -80 || true
+          ls -la shots || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: godot-shots, path: shots }
+      - uses: actions/upload-artifact@v4
+        with: { name: NeonGolgeler-Godot-Windows, path: godot/build/NeonGolgeler.exe }
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: godot-deneme-${{ github.run_number }}
+          name: Godot deneme ${{ github.run_number }}
+          prerelease: true
+          make_latest: false
+          files: godot/build/NeonGolgeler.exe
