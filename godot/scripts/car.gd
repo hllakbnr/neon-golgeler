@@ -34,7 +34,7 @@ func _ready() -> void:
 	shape.shape = bs
 	shape.position = Vector3(c.x, c.y + size.y * 0.12, c.z)
 	add_child(shape)
-	seat = Vector3(size.x * 0.2, c.y - size.y * 0.25, c.z - size.z * 0.05)
+	seat = Vector3(size.x * 0.2, c.y - size.y * 0.44, c.z - size.z * 0.06)
 	lights = CarModel.add_lights(self, info)
 	for w in info.wheels:
 		var wpos: Vector3 = w[0]

@@ -41,6 +41,7 @@ func _btn(text: String, cb: Callable, w := 0) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.add_theme_font_size_override("font_size", 18)
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	if w > 0:
 		b.custom_minimum_size = Vector2(w, 42)
 	var n := StyleBoxFlat.new()
@@ -115,7 +116,7 @@ func _build_main() -> void:
 	main.add_child(sub)
 	list = ItemList.new()
 	list.position = Vector2(48, 130)
-	list.size = Vector2(300, 820)
+	list.size = Vector2(250, 760)
 	list.add_theme_font_size_override("font_size", 20)
 	for id in slot_ids:
 		list.add_item(Game.SLOTS[id][0])
@@ -123,8 +124,8 @@ func _build_main() -> void:
 	main.add_child(list)
 	# önizleme
 	var svc := SubViewportContainer.new()
-	svc.position = Vector2(380, 130)
-	svc.size = Vector2(760, 820)
+	svc.position = Vector2(320, 130)
+	svc.size = Vector2(620, 700)
 	svc.stretch = true
 	main.add_child(svc)
 	vp = SubViewport.new()
@@ -170,7 +171,7 @@ func _build_main() -> void:
 	vp.add_child(preview)
 	# animasyon düğmeleri
 	var anims := HBoxContainer.new()
-	anims.position = Vector2(390, 900)
+	anims.position = Vector2(320, 845)
 	anims.add_theme_constant_override("separation", 6)
 	main.add_child(anims)
 	for a in [["Dur", "idle"], ["Yürü", "walk"], ["Koş", "sprint"], ["Sür", "drive"], ["Yumruk", "attack-melee-right"], ["Tekme", "attack-kick-right"], ["Düş", "die"], ["Selam", "emote-yes"]]:
@@ -178,26 +179,26 @@ func _build_main() -> void:
 		anims.add_child(_btn(a[0], func(): preview.play_once(an, 0.15)))
 	# sağ panel
 	var side := VBoxContainer.new()
-	side.position = Vector2(1170, 130)
-	side.custom_minimum_size = Vector2(700, 0)
+	side.position = Vector2(970, 130)
+	side.custom_minimum_size = Vector2(580, 0)
 	side.add_theme_constant_override("separation", 12)
 	main.add_child(side)
 	info = Game.styled_label("", 20)
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD
-	info.custom_minimum_size = Vector2(700, 0)
+	info.custom_minimum_size = Vector2(580, 0)
 	side.add_child(info)
 	mode_l = Game.styled_label("", 18, Color(0.6, 1, 0.8))
 	mode_l.autowrap_mode = TextServer.AUTOWRAP_WORD
-	mode_l.custom_minimum_size = Vector2(700, 0)
+	mode_l.custom_minimum_size = Vector2(580, 0)
 	side.add_child(mode_l)
-	side.add_child(_btn("3B model yükle (.glb / .gltf)", func(): _open("glb"), 420))
-	side.add_child(_btn("Kostüm dokusu yükle (.png)", func(): _open("png"), 420))
-	side.add_child(_btn("Kostüm şablonunu kaydet (boyamak için)", func(): _open("save"), 420))
-	side.add_child(_btn("Varsayılana dön", _reset, 420))
-	side.add_child(_btn("Kapat", func(): queue_free(), 420))
+	side.add_child(_btn("3B model yükle (.glb / .gltf)", func(): _open("glb"), 560))
+	side.add_child(_btn("Kostüm dokusu yükle (.png)", func(): _open("png"), 560))
+	side.add_child(_btn("Kostüm şablonunu kaydet (boyamak için)", func(): _open("save"), 560))
+	side.add_child(_btn("Varsayılana dön", _reset, 560))
+	side.add_child(_btn("Kapat", func(): queue_free(), 560))
 	var help := Game.styled_label("İpuçları:\n• İskeletli insansı modeller (ör. Mixamo'dan .glb) en iyi sonucu verir.\n• Parça adları head / torso / arm-left / arm-right / leg-left / leg-right olan modeller doğrudan takılır.\n• Tek parça modeller boy oranlarına göre otomatik bölünür.\n• Model +Z yönüne bakmalı (glTF standardı).", 16, Color(1, 1, 1, 0.65))
 	help.autowrap_mode = TextServer.AUTOWRAP_WORD
-	help.custom_minimum_size = Vector2(700, 0)
+	help.custom_minimum_size = Vector2(580, 0)
 	side.add_child(help)
 	dlg = FileDialog.new()
 	dlg.access = FileDialog.ACCESS_FILESYSTEM

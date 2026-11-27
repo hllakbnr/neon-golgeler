@@ -200,27 +200,29 @@ func _run_shots() -> void:
 	# araç: sürücü koltuğunda, gündüz
 	_set_time(12.5)
 	var car: Car = get_tree().get_nodes_in_group("cars")[0]
-	player.global_position = car.global_position + Vector3(-2.2, 0, 0)
+	player.global_position = car.global_position + Vector3(2.2, 0, 0)
 	await _wait(5)
 	player._try_enter()
-	player.yaw = car.global_rotation.y + PI * 0.75
-	player.pitch = -0.25
-	await _wait(40)
+	await _wait(20)
+	_free_cam(car.global_position + Vector3(4.2, 2.3, 5.0), car.global_position + Vector3(0, 1.0, 0))
+	await _wait(10)
 	await Game.shot("07_arac")
+	_player_cam()
 	player.exit_car()
 	# yakın plan karakter (önden)
 	player.global_position = SPAWN + Vector3(0, 0, 4)
 	player.visual.rotation.y = PI
-	player.yaw = 0.0
-	player.pitch = -0.1
-	await _wait(40)
+	await _wait(20)
+	var pp := player.global_position
+	_free_cam(pp + Vector3(0.6, 1.6, -3.4), pp + Vector3(0, 1.1, 0))
+	await _wait(10)
 	await Game.shot("08_karakter")
 	# gece şehir manzaraları
 	_set_time(22.0)
 	_free_cam(Vector3(-118, 34, -118), Vector3(0, 12, 0))
 	await _wait(40)
 	await Game.shot("09_gece_merkez")
-	_free_cam(Vector3(-40, 3.0, -205), Vector3(-80, 4.0, -232))
+	_free_cam(Vector3(-60, 3.5, -240), Vector3(20, 6.0, -238))
 	await _wait(30)
 	await Game.shot("10_eski_carsi")
 	_free_cam(Vector3(-6, 2.4, -58), Vector3(-6, 6.0, 10))
@@ -231,7 +233,7 @@ func _run_shots() -> void:
 	await _wait(40)
 	await Game.shot("12_sahil_gunbatimi")
 	_set_time(15.0)
-	_free_cam(Vector3(60, 22, 60), Vector3(80, 15, 0))
+	_free_cam(Vector3(175, 78, 175), Vector3(40, 15, 40))
 	await _wait(30)
 	await Game.shot("13_monoray")
 	_player_cam()

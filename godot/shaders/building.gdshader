@@ -65,10 +65,12 @@ void fragment() {
 			base = mix(base, trim.rgb, frame * 0.55 * (1.0 - glass_amt));
 			rough = mix(rough, 0.03, win);
 			metal = mix(metal, 0.35, win);
-			float lit = step(0.5, r) * win;
-			vec3 wc = mix(vec3(1.0, 0.72, 0.42), vec3(0.55, 0.8, 1.0), step(0.72, r));
-			wc = mix(wc, vec3(1.0, 0.45, 0.85), step(0.93, r));
-			emit += lit * night * wc * (0.25 + 0.4 * f.y) * mix(0.9, 0.5, glass_amt);
+			float floor_on = step(0.3, hash(vec2(cell.y, seed * 3.1)));      // bazı katlar tamamen karanlık
+			float lit = step(0.6, r) * win * floor_on;
+			vec3 wc = mix(vec3(1.0, 0.7, 0.4), vec3(0.6, 0.82, 1.0), step(0.86, r));
+			wc = mix(wc, vec3(1.0, 0.4, 0.8), step(0.975, r));
+			float inner = 0.55 + 0.45 * smoothstep(0.2, 0.9, f.y) * (0.6 + 0.4 * hash(cell * 1.31));
+			emit += lit * night * wc * inner * mix(0.42, 0.26, glass_amt);
 			base *= 1.0 - win * 0.25 * (1.0 - f.y);
 			win_any = win;
 		}

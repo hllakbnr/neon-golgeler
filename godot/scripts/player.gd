@@ -162,7 +162,7 @@ func _try_enter() -> void:
 		car.add_child(visual)
 		visual.position = car.seat
 		visual.rotation = Vector3.ZERO
-		visual.scale = Vector3.ONE * 0.82
+		visual.scale = Vector3.ONE * 0.72
 		visual.play("drive", 0.15)
 		car.set_driver(true)
 		entered_vehicle.emit(car)
