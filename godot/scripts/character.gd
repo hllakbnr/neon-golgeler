@@ -480,11 +480,11 @@ func set_motion(speed: float, on_ground := true) -> void:
 	elif speed < 0.3:
 		play("idle", 0.3)
 	elif speed < 2.2:
-		play("walk", 0.25, clampf(speed / (NOMINAL.walk * k), 0.6, 2.2))
+		play("walk", 0.25, clampf(speed / (NOMINAL.walk * k), 0.6, 1.5))
 	elif speed < 5.4:
-		play("jog", 0.25, clampf(speed / (NOMINAL.jog * k), 0.7, 1.8))
+		play("jog", 0.25, clampf(speed / (NOMINAL.jog * k), 0.7, 1.4))
 	else:
-		play("sprint", 0.25, clampf(speed / (NOMINAL.sprint * k), 0.8, 1.7))
+		play("sprint", 0.25, clampf(speed / (NOMINAL.sprint * k), 0.8, 1.35))
 
 
 # ---------------------------------------------------------------- model yoksa yedek

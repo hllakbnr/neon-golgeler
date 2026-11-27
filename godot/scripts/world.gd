@@ -171,9 +171,11 @@ func _environment() -> void:
 	env.set_glow_level(3, 0.8)
 	env.set_glow_level(5, 0.5)
 	env.fog_enabled = true
-	env.fog_density = 0.0009
-	env.fog_aerial_perspective = 0.6
-	env.fog_sky_affect = 0.2
+	env.fog_density = 0.00042
+	env.fog_height = 18.0
+	env.fog_height_density = 0.012
+	env.fog_aerial_perspective = 0.35
+	env.fog_sky_affect = 0.15
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 1.12
 	env.adjustment_contrast = 1.06
@@ -443,7 +445,7 @@ func _margin(th: float) -> float:
 	## şehir kenarından kıyıya kadar kara genişliği (yöne göre; +z güney)
 	var c := cos(th)
 	var s := sin(th)
-	return 70.0 + 190.0 * maxf(0.0, c) + 55.0 * maxf(0.0, -c) + 430.0 * maxf(0.0, -s)
+	return 70.0 + 190.0 * maxf(0.0, c) + 55.0 * maxf(0.0, -c) + 430.0 * maxf(0.0, -s) + 30.0 * maxf(0.0, s)
 
 
 func terrain_h(x: float, z: float) -> float:
@@ -461,10 +463,16 @@ func terrain_h(x: float, z: float) -> float:
 			var amp := 5.0 + 16.0 * maxf(0.0, -sin(th))
 			h = sin(clampf(t, 0.0, 1.0) * PI) * amp + _noise.get_noise_2d(x * 3.0, z * 3.0) * 2.5
 			h = lerpf(h, -1.4, smoothstep(0.8, 1.0, t))
+			# güney: düz kumsal (tepe ve ağaç yok)
+			var beach := smoothstep(0.3, 0.75, sin(th))
+			h = lerpf(h, lerpf(0.12, -1.9, pow(t, 1.3)), beach)
 			h = lerpf(-0.4, h, smoothstep(0.0, 26.0, d))
+			# dağlar: manastır kendi tepesinde, arkasında daha yüksek zirveler (kuzey kıyısına iner)
 			var mx := Vector2(x, z)
-			var mtn := 118.0 * exp(-mx.distance_squared_to(Vector2(-420, -640)) / (2.0 * 150.0 * 150.0))
-			mtn += 85.0 * exp(-mx.distance_squared_to(Vector2(-160, -700)) / (2.0 * 110.0 * 110.0))
+			var mtn := 74.0 * exp(-mx.distance_squared_to(Vector2(MON.x, MON.z)) / (2.0 * 115.0 * 115.0))
+			mtn = maxf(mtn, 150.0 * exp(-mx.distance_squared_to(Vector2(-560, -720)) / (2.0 * 140.0 * 140.0)))
+			mtn = maxf(mtn, 115.0 * exp(-mx.distance_squared_to(Vector2(-60, -745)) / (2.0 * 120.0 * 120.0)))
+			mtn += _noise.get_noise_2d(x * 2.0, z * 2.0) * 6.0 * smoothstep(20.0, 60.0, mtn)
 			mtn *= 1.0 - smoothstep(0.75, 1.0, t)
 			h = maxf(h, mtn)
 			var dm := mx.distance_to(Vector2(MON.x, MON.z))
@@ -475,8 +483,10 @@ func terrain_h(x: float, z: float) -> float:
 			if x > EDGE and absf(z) < 40.0:
 				var by := clampf((x - EDGE) / (BRIDGE_X0 - EDGE), 0.0, 1.0) * 2.0
 				h = lerpf(by - 0.15, h, smoothstep(9.0, 30.0, absf(z)))
-			if x < -EDGE and z > 0.0:
-				h = minf(h, 1.2 - t * 1.5)
+			# Liman: düz rıhtım zemini, sonra derin liman havzası
+			if x < -EDGE and z > -30.0:
+				var harbor := lerpf(-0.35, -7.0, smoothstep(52.0, 70.0, dx))
+				h = lerpf(h, harbor, smoothstep(-30.0, 20.0, z) * (1.0 - smoothstep(EDGE + 20.0, EDGE + 60.0, z)))
 	var di := Vector2(x, z).distance_to(ISLE)
 	if di < 150.0:
 		h = maxf(h, lerpf(3.0, -10.0, smoothstep(105.0, 150.0, di)))
@@ -1218,41 +1228,99 @@ func _road_strip(a: Vector3, b: Vector3, width: float) -> void:
 
 func _coast() -> void:
 	_poi("sahil", "Sahil", "beach", Vector3(0, 0, EDGE + 40))
+	_beach()
+	# Liman: beton rıhtım, iskeleler, gemiler, vinçler, konteyner yığınları
 	var wood := Game.paint(Color(0.45, 0.33, 0.22), 0.0, 0.85)
+	var quay := Game.pbr("concrete", Color(0.62, 0.62, 0.6), 0.25)
+	var qx0 := -EDGE - 6.0
+	var qx1 := -EDGE - 60.0
+	_box(Vector3((qx0 + qx1) * 0.5, -0.25, 170.0), Vector3(qx0 - qx1, 0.6, 320.0), quay)
+	_neon(Vector3(qx1 + 0.3, 0.08, 170.0), Vector3(0.25, 0.12, 320.0), Color(1.0, 0.8, 0.15), Vector3.ZERO, "liman")
 	var west := -EDGE - 70.0
 	for k in range(4):
 		var z := 60.0 + k * 60.0
 		var pier_len := 70.0
-		_box(Vector3(west - pier_len * 0.5 + 30.0, 1.4, z), Vector3(pier_len, 0.5, 8.0), wood)
+		_box(Vector3(west - pier_len * 0.5 + 30.0, -0.2, z), Vector3(pier_len, 0.5, 8.0), wood)
 		for q in range(0, int(pier_len), 8):
-			_box(Vector3(west + 30.0 - q, -1.5, z - 3.6), Vector3(0.5, 6.0, 0.5), wood, false)
-			_box(Vector3(west + 30.0 - q, -1.5, z + 3.6), Vector3(0.5, 6.0, 0.5), wood, false)
-		_box(Vector3(west - 20.0, 0.6, z + 16.0), Vector3(42.0, 6.0, 10.0), Game.paint([Color(0.7, 0.15, 0.12), Color(0.15, 0.3, 0.55), Color(0.2, 0.2, 0.22)][k % 3], 0.3, 0.6))
-		_box(Vector3(west - 26.0, 5.5, z + 16.0), Vector3(10.0, 4.0, 8.0), Game.paint(Color(0.92, 0.92, 0.9), 0.1, 0.6))
+			_box(Vector3(west + 30.0 - q, -3.0, z - 3.6), Vector3(0.5, 5.6, 0.5), wood, false)
+			_box(Vector3(west + 30.0 - q, -3.0, z + 3.6), Vector3(0.5, 5.6, 0.5), wood, false)
+		var hull: Color = [Color(0.7, 0.15, 0.12), Color(0.15, 0.3, 0.55), Color(0.2, 0.2, 0.22), Color(0.1, 0.45, 0.35)][k]
+		_box(Vector3(west - 20.0, 0.6, z + 16.0), Vector3(42.0, 6.0, 10.0), Game.paint(hull, 0.3, 0.6))
+		_box(Vector3(west - 28.0, 5.5, z + 16.0), Vector3(10.0, 4.0, 8.0), Game.paint(Color(0.92, 0.92, 0.9), 0.1, 0.6))
+		_neon(Vector3(west - 28.0, 7.6, z + 16.0), Vector3(10.2, 0.15, 8.2), Color(0.2, 0.9, 1.0), Vector3.ZERO, "liman")
+		for c in range(3):
+			_box(Vector3(west - 12.0 + c * 7.0, 4.9, z + 16.0), Vector3(6.0, 2.6, 2.5), Game.paint([Color(0.85, 0.25, 0.15), Color(0.2, 0.45, 0.8), Color(0.95, 0.75, 0.2)][(k + c) % 3], 0.5, 0.55))
+	var yel := Game.paint(Color(0.95, 0.72, 0.1), 0.4, 0.5)
 	for k in range(3):
-		var p := Vector3(west + 22.0, 0, 90.0 + k * 60.0)
-		var yel := Game.paint(Color(0.95, 0.7, 0.1), 0.4, 0.5)
+		var p := Vector3(west + 24.0, 0, 90.0 + k * 60.0)
 		for sx in [-1, 1]:
 			for sz in [-1, 1]:
-				_box(p + Vector3(sx * 4.0, 12.0, sz * 4.0), Vector3(0.8, 24.0, 0.8), yel)
-		_box(p + Vector3(-12.0, 24.5, 0), Vector3(44.0, 1.6, 2.0), yel, false)
+				_box(p + Vector3(sx * 4.0, 13.0, sz * 4.0), Vector3(0.9, 26.0, 0.9), yel)
+		for hy in [8.0, 18.0]:
+			for sz in [-1, 1]:
+				_box(p + Vector3(0, hy, sz * 4.0), Vector3(8.8, 0.6, 0.6), yel, false)
+		_box(p + Vector3(-14.0, 26.5, 0), Vector3(50.0, 1.8, 2.4), yel, false)
+		_box(p + Vector3(8.0, 25.5, 0), Vector3(6.0, 3.0, 3.0), Game.paint(Color(0.3, 0.3, 0.32), 0.5, 0.5), false)
+		_box(p + Vector3(2.0, 28.0, 0), Vector3(4.0, 3.0, 4.0), Game.paint(Color(0.95, 0.95, 0.92), 0.1, 0.5), false)
+		_neon(p + Vector3(-38.8, 26.5, 0), Vector3(0.4, 0.4, 0.4), Color(1, 0.15, 0.1), Vector3.ZERO, "liman")
+	var cols := [Color(0.8, 0.2, 0.15), Color(0.15, 0.4, 0.75), Color(0.95, 0.7, 0.15), Color(0.2, 0.55, 0.3), Color(0.9, 0.9, 0.92), Color(0.55, 0.3, 0.6)]
+	for row in range(4):
+		for k in range(9):
+			var p := Vector3(-EDGE - 14.0 - row * 3.2, 0.05, 32.0 + k * 7.0)
+			if rng.randf() < 0.2:
+				continue
+			for st in range(rng.randi_range(1, 4)):
+				_box(p + Vector3(0, 1.3 + st * 2.6, 0), Vector3(2.5, 2.6, 6.1), Game.paint(cols[rng.randi_range(0, cols.size() - 1)], 0.5, 0.55))
 	_poi("liman", "Liman", "harbor", Vector3(west, 0, 150))
 	_label("LİMAN", Vector3(-EDGE - 8, 9, 120), PI * 0.5, Color(1.0, 0.85, 0.2), 140, 0.05)
-	# doğu yolu + köprü + güvenlikli ada yolu
+	# doğu yolu + kırmızı asma köprü + güvenlikli ada yolu
+	var dh := 6.0
 	_road_strip(Vector3(EDGE, 0.0, 0), Vector3(BRIDGE_X0, 2.0, 0), 12.0)
-	_road_strip(Vector3(BRIDGE_X0, 2.0, 0), Vector3(BRIDGE_X0 + 30.0, 6.0, 0), 12.0)
-	_road_strip(Vector3(BRIDGE_X0 + 30.0, 6.0, 0), Vector3(BRIDGE_X1 - 30.0, 6.0, 0), 12.0)
-	_road_strip(Vector3(BRIDGE_X1 - 30.0, 6.0, 0), Vector3(BRIDGE_X1, 3.2, 0), 12.0)
-	var steel := Game.paint(Color(0.75, 0.2, 0.18), 0.7, 0.4)
+	_road_strip(Vector3(BRIDGE_X0, 2.0, 0), Vector3(BRIDGE_X0 + 30.0, dh, 0), 12.0)
+	_road_strip(Vector3(BRIDGE_X0 + 30.0, dh, 0), Vector3(BRIDGE_X1 - 30.0, dh, 0), 12.0)
+	_road_strip(Vector3(BRIDGE_X1 - 30.0, dh, 0), Vector3(BRIDGE_X1, 3.2, 0), 12.0)
+	var steel := Game.paint(Color(0.78, 0.18, 0.14), 0.6, 0.4)
+	var concrete := Game.pbr("concrete", Color(0.8, 0.8, 0.8), 0.3)
 	var x := BRIDGE_X0 + 30.0
 	while x <= BRIDGE_X1 - 30.0:
-		_box(Vector3(x, -3.0, 0), Vector3(3.0, 18.0, 3.0), Game.pbr("concrete", Color(0.8, 0.8, 0.8), 0.3), false)
-		for s in [-1, 1]:
-			_box(Vector3(x, 12.0, s * 6.4), Vector3(0.8, 12.0, 0.8), steel, false)
-		x += 33.0
-	for s in [-1, 1]:
-		_box(Vector3((BRIDGE_X0 + BRIDGE_X1) * 0.5, 7.0, s * 6.2), Vector3(BRIDGE_X1 - BRIDGE_X0 - 60.0, 1.0, 0.3), steel)
-		_neon(Vector3((BRIDGE_X0 + BRIDGE_X1) * 0.5, 18.2, s * 6.4), Vector3(BRIDGE_X1 - BRIDGE_X0 - 60.0, 0.15, 0.15), Color(1.0, 0.2, 0.5), Vector3.ZERO, "bridge")
+		_box(Vector3(x, -3.0, 0), Vector3(3.0, 17.4, 3.0), concrete, false)
+		x += 27.0
+	var towers := [BRIDGE_X0 + 62.0, BRIDGE_X1 - 62.0]
+	var top := 48.0
+	for tx in towers:
+		for sd in [-1, 1]:
+			_box(Vector3(tx, (top - 4.0) * 0.5, sd * 7.4), Vector3(1.8, top + 4.0, 1.8), steel)
+		for hy in [dh + 9.0, dh + 24.0, top - 1.0]:
+			_box(Vector3(tx, hy, 0), Vector3(1.4, 1.6, 16.6), steel, false)
+		_neon(Vector3(tx, top + 2.4, 0), Vector3(2.0, 0.3, 16.8), Color(1.0, 0.25, 0.45), Vector3.ZERO, "bridge")
+		_box(Vector3(tx, -3.0, 0), Vector3(5.0, 8.0, 19.0), concrete, false)
+	# ana halatlar (zincir eğrisi) + askı çubukları
+	var span_pts := [Vector2(BRIDGE_X0 + 30.0, dh + 1.2), Vector2(towers[0], top), Vector2(towers[1], top), Vector2(BRIDGE_X1 - 30.0, dh + 1.2)]
+	for sd in [-1, 1]:
+		var zc := sd * 7.4
+		for seg in range(3):
+			var a2: Vector2 = span_pts[seg]
+			var b2: Vector2 = span_pts[seg + 1]
+			var sag := 22.0 if seg == 1 else 4.0
+			var steps := 16 if seg == 1 else 6
+			var prev := Vector3(a2.x, a2.y, zc)
+			for q in range(1, steps + 1):
+				var u := float(q) / steps
+				var cx := lerpf(a2.x, b2.x, u)
+				var cy := lerpf(a2.y, b2.y, u) - sag * 4.0 * u * (1.0 - u)
+				var cur := Vector3(cx, cy, zc)
+				var mid := (prev + cur) * 0.5
+				var dir := cur - prev
+				var bas := Basis.looking_at(dir.normalized(), Vector3.UP)
+				var cm := _box(mid, Vector3(0.45, 0.45, dir.length() + 0.1), steel, false)
+				cm.basis = bas
+				_neon(mid + Vector3(0, 0.3, 0), Vector3(0.12, 0.12, dir.length()), Color(1.0, 0.25, 0.45), bas.get_euler(), "bridge")
+				if cy > dh + 2.5 and q < steps:
+					_box(Vector3(cx, (cy + dh + 0.6) * 0.5, zc), Vector3(0.12, cy - dh - 0.6, 0.12), steel, false)
+				prev = cur
+	for sd in [-1, 1]:
+		_box(Vector3((BRIDGE_X0 + BRIDGE_X1) * 0.5, dh + 0.9, sd * 6.2), Vector3(BRIDGE_X1 - BRIDGE_X0 - 60.0, 1.0, 0.3), steel)
+		_neon(Vector3((BRIDGE_X0 + BRIDGE_X1) * 0.5, dh - 0.25, sd * 6.1), Vector3(BRIDGE_X1 - BRIDGE_X0 - 60.0, 0.12, 0.12), Color(0.2, 0.9, 1.0), Vector3.ZERO, "bridge")
 	_road_strip(Vector3(BRIDGE_X1, 3.2, 0), Vector3(ISLE.x - 40.0, 3.2, ISLE.y), 12.0)
 	# manastır yolu (rampa)
 	var z0 := -EDGE
@@ -1265,6 +1333,43 @@ func _coast() -> void:
 		var yb := clampf((-EDGE - zb) / (absf(MON.z) - 60.0 - EDGE), 0.0, 1.0) * MON.y
 		_road_strip(Vector3(MON.x, ya, za), Vector3(MON.x, yb, zb), 10.0)
 	_label("KASIRGA MANASTIRI ↑", Vector3(MON.x + 7.0, 6.0, -EDGE - 12.0), 0.0, Color(1.0, 0.8, 0.4), 110, 0.03)
+
+
+func _beach() -> void:
+	## kumsal: şemsiyeler, şezlonglar, cankurtaran kuleleri
+	var pole := Game.paint(Color(0.92, 0.92, 0.9), 0.2, 0.5)
+	var canopy_cols := [Color(0.95, 0.25, 0.3), Color(0.15, 0.6, 0.85), Color(1.0, 0.8, 0.2), Color(0.3, 0.8, 0.5), Color(1.0, 0.5, 0.7)]
+	var x := -EDGE + 20.0
+	while x < EDGE - 10.0:
+		var z := EDGE + rng.randf_range(24.0, 52.0)
+		var y := terrain_h(x, z)
+		if y > -0.4:
+			var p := Vector3(x + rng.randf_range(-4, 4), y, z)
+			_box(p + Vector3(0, 1.3, 0), Vector3(0.1, 2.6, 0.1), pole, false)
+			var cn := MeshInstance3D.new()
+			var cm := CylinderMesh.new()
+			cm.top_radius = 0.05
+			cm.bottom_radius = 1.7
+			cm.height = 0.55
+			cm.radial_segments = 10
+			cn.mesh = cm
+			cn.material_override = Game.paint(canopy_cols[rng.randi_range(0, canopy_cols.size() - 1)], 0.0, 0.7)
+			cn.position = p + Vector3(0, 2.6, 0)
+			add_child(cn)
+			for sd in [-1, 1]:
+				var l := _box(p + Vector3(sd * 1.2, 0.3, 1.6), Vector3(0.7, 0.12, 1.9), Game.paint(Color(1, 1, 1), 0.0, 0.6), false)
+				l.rotation.x = -0.15
+		x += rng.randf_range(16.0, 30.0)
+	for tx in [-200.0, 20.0, 230.0]:
+		var z := EDGE + 40.0
+		var p := Vector3(tx, terrain_h(tx, z), z)
+		var wood := Game.paint(Color(0.95, 0.95, 0.92), 0.0, 0.7)
+		for sx in [-1, 1]:
+			for sz in [-1, 1]:
+				_box(p + Vector3(sx * 1.2, 1.6, sz * 1.2), Vector3(0.2, 3.2, 0.2), wood, false)
+		_box(p + Vector3(0, 4.2, 0), Vector3(3.0, 2.2, 3.0), Game.paint(Color(0.95, 0.3, 0.25), 0.0, 0.6))
+		_box(p + Vector3(0, 5.5, 0), Vector3(3.6, 0.3, 3.6), wood, false)
+		_label("CANKURTARAN", p + Vector3(0, 4.3, 1.55), 0.0, Color(1, 1, 1), 64, 0.012)
 
 
 func _monastery() -> void:

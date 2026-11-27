@@ -235,8 +235,8 @@ static func _bake_blocky_anim(s: Dictionary, an: String, length: float, paths: D
 			var hq: Quaternion = (p.head.basis * rest.head.basis.inverse()).get_rotation_quaternion()
 			a.rotation_track_insert_key(tr.head, time, torso_q.inverse() * hq)
 		for sd in [["l", "arm-left"], ["r", "arm-right"]]:
-			var ua := "upperarm_" + sd[0]
-			var hd := "hand_" + sd[0]
+			var ua: String = "upperarm_" + String(sd[0])
+			var hd: String = "hand_" + String(sd[0])
 			if p.has(ua) and p.has(hd):
 				var d: Vector3 = p[hd].origin - p[ua].origin
 				a.rotation_track_insert_key(tr[sd[1]], time, torso_q.inverse() * _arc(Vector3.DOWN, d))

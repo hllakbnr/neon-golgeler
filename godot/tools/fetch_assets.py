@@ -194,6 +194,24 @@ def _recolor(src, dst, mapping, extra=None):
     im.save(dst)
 
 
+def _montage(tdir):
+    """CI denetimi için tüm kostüm dokularının küçük bir panosu (shots/00_dokular)."""
+    from PIL import Image, ImageDraw
+    files = sorted(f for f in os.listdir(tdir) if f.endswith('.png'))
+    cell = 256
+    cols = 6
+    rows = (len(files) + cols - 1) // cols
+    sheet = Image.new('RGB', (cols * cell, rows * (cell + 20)), (30, 30, 36))
+    d = ImageDraw.Draw(sheet)
+    for i, f in enumerate(files):
+        im = Image.open(os.path.join(tdir, f)).convert('RGBA').resize((cell, cell))
+        x, y = (i % cols) * cell, (i // cols) * (cell + 20)
+        sheet.paste(im, (x, y + 20), im)
+        d.text((x + 6, y + 4), f, fill=(255, 255, 255))
+    sheet.save('/tmp/00_dokular.png')
+    print('Doku panosu:', len(files))
+
+
 def _make_skins():
     """Kaan ve Ela için özgün kostümler (ninja şablonundan yeniden renklendirme)."""
     try:
@@ -249,6 +267,10 @@ def _make_skins():
         for i in range(3):
             d.arc((cx - 34 + i * 6, cy - 30 + i * 10, cx + 34 - i * 6, cy + 10 + i * 10), 200, 340, fill=(240, 250, 255, 255), width=6)
     _recolor(src, os.path.join(tdir, 'ela.png'), ela, ela_extra)
+    try:
+        _montage(tdir)
+    except Exception as e:
+        print('montaj olmadı', e)
     manifest.setdefault('kenney', {})['skins'] = sorted('res://assets/kenney/blocky/Textures/' + f for f in os.listdir(tdir) if f.endswith('.png'))
     print('Özel kostümler: kaan.png, ela.png')
 
