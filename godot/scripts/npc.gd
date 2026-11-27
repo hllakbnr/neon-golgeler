@@ -15,6 +15,8 @@ var _vel := Vector3.ZERO  # savrulma hızı
 var _lod_t := 0.0
 var _far := false         # kameradan uzaksa görünmez, animasyonu durur (FPS)
 var _cars: Array = []
+var body: AnimatableBody3D      # oyuncunun içinden geçmemesi için çarpışma gövdesi
+var body_shape: CollisionShape3D
 
 
 func _ready() -> void:
@@ -24,6 +26,19 @@ func _ready() -> void:
 	visual.setup(slot, Game.slot_default_skin(slot))
 	speed = randf_range(1.1, 1.6)
 	_lod_t = randf() * 0.5
+	body = AnimatableBody3D.new()
+	body.sync_to_physics = false
+	body.collision_layer = 8
+	body.collision_mask = 0
+	body_shape = CollisionShape3D.new()
+	var cap := CapsuleShape3D.new()
+	cap.radius = 0.3
+	cap.height = 1.7
+	body_shape.shape = cap
+	body_shape.position.y = 0.85
+	body.add_child(body_shape)
+	body.set_meta("ped", self)
+	add_child(body)
 
 
 func _physics_process(delta: float) -> void:
@@ -37,6 +52,7 @@ func _physics_process(delta: float) -> void:
 		global_position.y = maxf(0.18, global_position.y + _vel.y * delta)
 		_vel.y -= 12.0 * delta
 		if _down <= 0.0:
+			body_shape.set_deferred("disabled", false)
 			global_position.y = 0.18
 			visual.play("idle", 0.4)
 		return
@@ -48,6 +64,7 @@ func _physics_process(delta: float) -> void:
 		if far != _far:
 			_far = far
 			visual.visible = not far
+			body_shape.set_deferred("disabled", far)
 			if visual.anim:
 				visual.anim.active = not far
 		_cars = get_tree().get_nodes_in_group("cars") + get_tree().get_nodes_in_group("traffic") if not far else []
@@ -115,5 +132,6 @@ func _physics_process(delta: float) -> void:
 
 func _knock(car_vel: Vector3) -> void:
 	_down = 5.0
+	body_shape.set_deferred("disabled", true)
 	_vel = car_vel * 0.7 + Vector3(0, 3.5, 0)
 	visual.play_once("die", 0.05)

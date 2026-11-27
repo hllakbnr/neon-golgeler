@@ -19,6 +19,11 @@ var _thr := 0.0
 
 func _ready() -> void:
 	add_to_group("cars")
+	contact_monitor = true
+	max_contacts_reported = 4
+	body_entered.connect(func(b: Node):
+		if b is TrafficCar:
+			(b as TrafficCar).hit(linear_velocity))
 	mass = 1450.0
 	collision_mask = 1 | 2              # 2: araçlara özel kaldırım kenarı
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM

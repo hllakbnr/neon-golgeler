@@ -9,3 +9,9 @@ assets/kenney/
 assets/voice/
 assets/anim/
 version.txt
+data/world_h.bin
+data/world_c.bin
+data/world_r.bin
+data/world.json
+data/map.png
+data/map.png.import

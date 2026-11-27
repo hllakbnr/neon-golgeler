@@ -31,6 +31,7 @@ var _safe_t := 0.0
 
 func _ready() -> void:
 	add_to_group("player")
+	collision_mask = 1 | 8          # 8: yayalar (içlerinden geçilmez)
 	var cs := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.32
@@ -222,6 +223,15 @@ func _rescue_car() -> void:
 	car.global_transform = Transform3D(b, _safe_car.origin + Vector3(0, 0.6, 0))
 	car.linear_velocity = Vector3.ZERO
 	car.angular_velocity = Vector3.ZERO
+
+
+func prompt_text() -> String:
+	if car:
+		return "[F] İn"
+	for c in get_tree().get_nodes_in_group("cars"):
+		if (c as Node3D).global_position.distance_to(global_position) < 3.8:
+			return "[F] Araca bin"
+	return ""
 
 
 func shake(t := 0.3) -> void:

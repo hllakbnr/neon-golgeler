@@ -35,6 +35,11 @@ jobs:
         run: |
           pip install -q pillow || true
           python3 godot/tools/fetch_assets.py
+      - name: Dünya verisi (kıta, yollar, şehir, harita)
+        run: |
+          pip install -q numpy scipy pillow
+          python3 godot/tools/make_world.py
+          ls -la godot/data
       - name: Sürüm numarası
         run: |
           echo "${{ github.run_number }}" > godot/version.txt

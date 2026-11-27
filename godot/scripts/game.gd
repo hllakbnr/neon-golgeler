@@ -42,6 +42,11 @@ var day := 1
 var paused := false
 var shots_dir := ""        # CI ekran görüntüsü modu
 var pose_test := false     # CI: yalnızca animasyon pozlarını çiz
+var money := 500           # cüzdan (₺)
+var bank := 2500           # banka hesabı
+var has_waypoint := false
+var waypoint := Vector3.ZERO
+var route := PackedVector3Array()
 var keyart: Array = []     # yükleme ekranı görselleri
 var night := 0.0           # 0 gündüz · 1 gece (World günceller)
 var font_display: Font
@@ -151,10 +156,25 @@ func _key(action: String, keys: Array, buttons: Array = [], mouse: Array = []) -
 
 
 func _setup_input() -> void:
-	_key("move_forward", [KEY_W, KEY_UP])
-	_key("move_back", [KEY_S, KEY_DOWN])
-	_key("move_left", [KEY_A, KEY_LEFT])
-	_key("move_right", [KEY_D, KEY_RIGHT])
+	_key("move_forward", [KEY_W])
+	_key("move_back", [KEY_S])
+	_key("move_left", [KEY_A])
+	_key("move_right", [KEY_D])
+	_key("map", [KEY_M], [JOY_BUTTON_BACK])
+	_key("phone", [KEY_UP], [JOY_BUTTON_DPAD_UP])
+	_key("ui_phone_down", [KEY_DOWN], [JOY_BUTTON_DPAD_DOWN])
+	_key("ui_phone_left", [KEY_LEFT], [JOY_BUTTON_DPAD_LEFT])
+	_key("ui_phone_right", [KEY_RIGHT], [JOY_BUTTON_DPAD_RIGHT])
+	_key("weapon_wheel", [KEY_TAB], [JOY_BUTTON_LEFT_SHOULDER])
+	_key("radio", [KEY_Q], [JOY_BUTTON_DPAD_LEFT])
+	_key("heavy_attack", [KEY_Q], [JOY_BUTTON_Y])
+	_key("block", [KEY_V], [JOY_BUTTON_RIGHT_SHOULDER])
+	_key("aim", [], [], [MOUSE_BUTTON_RIGHT])
+	_key("spinjitzu", [KEY_X], [])
+	_key("element", [KEY_Z], [])
+	_key("dragon", [KEY_B], [])
+	_key("weapon_next", [], [], [MOUSE_BUTTON_WHEEL_DOWN])
+	_key("weapon_prev", [], [], [MOUSE_BUTTON_WHEEL_UP])
 	_key("sprint", [KEY_SHIFT], [JOY_BUTTON_LEFT_STICK])
 	_key("jump", [KEY_SPACE], [JOY_BUTTON_A])
 	_key("vehicle", [KEY_F], [JOY_BUTTON_Y])

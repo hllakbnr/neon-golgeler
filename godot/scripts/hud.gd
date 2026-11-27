@@ -13,25 +13,28 @@ var area: Label
 var _area_name := ""
 var _area_t := 0.0
 var _area_check := 0.0
-var _zoom := 0.9
-const POI_STYLE := {"food": ["Y", Color(1.0, 0.6, 0.2)], "dojo": ["D", Color(1.0, 0.25, 0.8)], "weapons": ["S", Color(0.4, 0.9, 1.0)],
-	"clothes": ["K", Color(0.7, 0.45, 1.0)], "club": ["N", Color(0.2, 1.0, 1.0)], "police": ["P", Color(0.35, 0.55, 1.0)],
-	"hospital": ["H", Color(1.0, 0.3, 0.3)], "spray": ["B", Color(0.3, 1.0, 0.5)], "tower": ["T", Color(1.0, 0.3, 0.85)],
-	"monastery": ["M", Color(1.0, 0.8, 0.4)], "secure": ["A", Color(1.0, 0.2, 0.25)], "harbor": ["L", Color(1.0, 0.85, 0.2)],
-	"station": ["İ", Color(0.2, 0.9, 1.0)], "beach": ["☀", Color(1.0, 0.9, 0.4)]}
+var _zoom := 1.0
+var money: Label
+var help_box: Label
+var _help_t := 0.0
+var _route_t := 0.0
+var bars_box: HBoxContainer
+var health_bar: ProgressBar
+var armor_bar: ProgressBar
+var stars: Control
 
 
 func _ready() -> void:
 	layer = 5
 	minimap = Control.new()
 	minimap.position = Vector2(28, 0)
-	minimap.size = Vector2(300, 190)
+	minimap.size = Vector2(330, 210)
 	minimap.anchor_top = 1.0
 	minimap.anchor_bottom = 1.0
-	minimap.offset_top = -236
+	minimap.offset_top = -256
 	minimap.offset_bottom = -46
 	minimap.offset_left = 28
-	minimap.offset_right = 328
+	minimap.offset_right = 358
 	minimap.clip_contents = true
 	minimap.draw.connect(_draw_map)
 	add_child(minimap)
@@ -39,7 +42,7 @@ func _ready() -> void:
 	bars.anchor_top = 1.0
 	bars.anchor_bottom = 1.0
 	bars.offset_left = 28
-	bars.offset_right = 328
+	bars.offset_right = 358
 	bars.offset_top = -40
 	bars.offset_bottom = -32
 	bars.add_theme_constant_override("separation", 4)
@@ -47,7 +50,7 @@ func _ready() -> void:
 	for c in [Color(0.35, 0.85, 0.4), Color(0.3, 0.6, 1.0)]:
 		var pb := ProgressBar.new()
 		pb.show_percentage = false
-		pb.custom_minimum_size = Vector2(148, 8)
+		pb.custom_minimum_size = Vector2(163, 8)
 		pb.value = 100
 		var fg := StyleBoxFlat.new()
 		fg.bg_color = c
@@ -56,6 +59,11 @@ func _ready() -> void:
 		pb.add_theme_stylebox_override("fill", fg)
 		pb.add_theme_stylebox_override("background", bg)
 		bars.add_child(pb)
+		if health_bar == null:
+			health_bar = pb
+		else:
+			armor_bar = pb
+	bars_box = bars
 	clock = Game.styled_label("", 30, Color.WHITE, true)
 	clock.anchor_left = 1.0
 	clock.anchor_right = 1.0
@@ -65,6 +73,39 @@ func _ready() -> void:
 	clock.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	clock.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
 	add_child(clock)
+	money = Game.styled_label("", 30, Color(0.55, 1.0, 0.55), true)
+	money.anchor_left = 1.0
+	money.anchor_right = 1.0
+	money.offset_left = -320
+	money.offset_right = -30
+	money.offset_top = 58
+	money.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	money.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.7))
+	money.add_theme_constant_override("shadow_offset_x", 2)
+	money.add_theme_constant_override("shadow_offset_y", 2)
+	add_child(money)
+	stars = Control.new()
+	stars.anchor_left = 1.0
+	stars.anchor_right = 1.0
+	stars.offset_left = -330
+	stars.offset_right = -30
+	stars.offset_top = 100
+	stars.offset_bottom = 136
+	add_child(stars)
+	help_box = Label.new()
+	help_box.position = Vector2(28, 28)
+	help_box.size = Vector2(420, 0)
+	help_box.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	help_box.add_theme_font_size_override("font_size", 18)
+	var hb := StyleBoxFlat.new()
+	hb.bg_color = Color(0, 0, 0, 0.72)
+	hb.content_margin_left = 14
+	hb.content_margin_right = 14
+	hb.content_margin_top = 10
+	hb.content_margin_bottom = 10
+	help_box.add_theme_stylebox_override("normal", hb)
+	help_box.visible = false
+	add_child(help_box)
 	speed = Game.styled_label("", 44, Color.WHITE, true)
 	speed.anchor_left = 1.0
 	speed.anchor_right = 1.0
@@ -122,6 +163,13 @@ func toast(text: String) -> void:
 	_area_t = 4.0
 
 
+func notify(text: String, secs := 4.0) -> void:
+	## GTA tarzı sol üst bilgi kutusu
+	help_box.text = text
+	help_box.visible = true
+	_help_t = secs
+
+
 func _process(_d: float) -> void:
 	if player == null:
 		return
@@ -133,68 +181,64 @@ func _process(_d: float) -> void:
 			toast(nm.to_upper())
 	_area_t -= _d
 	area.modulate.a = clampf(minf(_area_t, 4.0 - _area_t) * 2.5, 0.0, 1.0) if _area_t > 0.0 else 0.0
+	_help_t -= _d
+	help_box.visible = _help_t > 0.0
+	_route_t -= _d
+	if Game.has_waypoint and _route_t <= 0.0:
+		_route_t = 1.0
+		if Vector2(player.global_position.x, player.global_position.z).distance_to(Vector2(Game.waypoint.x, Game.waypoint.z)) < 25.0:
+			Game.has_waypoint = false
+			Game.route = PackedVector3Array()
+			notify("Hedefe vardın.", 3.0)
+		else:
+			Game.route = world.route(player.global_position, Game.waypoint)
 	clock.text = Game.clock_text()
+	money.text = "₺%s" % _fmt(Game.money)
 	speed.text = ("%d km/s" % int(player.car.speed_kmh())) if player.car else ""
-	var near_car := false
-	if player.car == null:
-		for c in get_tree().get_nodes_in_group("cars"):
-			if (c as Node3D).global_position.distance_to(player.global_position) < 3.8:
-				near_car = true
-	prompt.text = "[F] Araca bin" if near_car else ("[F] İn" if player.car else "")
+	prompt.text = player.prompt_text() if player.has_method("prompt_text") else ""
 	fps.text = "%d FPS" % Engine.get_frames_per_second()
 	minimap.queue_redraw()
 
 
+func _fmt(v: int) -> String:
+	var s := str(absi(v))
+	var out := ""
+	while s.length() > 3:
+		out = "." + s.substr(s.length() - 3) + out
+		s = s.substr(0, s.length() - 3)
+	return ("-" if v < 0 else "") + s + out
+
+
 func _draw_map() -> void:
 	var sz := minimap.size
-	minimap.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.1, 0.26, 0.4, 0.9))
 	if player == null or world == null:
 		return
-	var center := sz * 0.5 + Vector2(0, 30)
+	var center := sz * 0.5 + Vector2(0, sz.y * 0.18)
 	var spd := player.car.linear_velocity.length() if player.car else 0.0
-	_zoom = lerpf(_zoom, lerpf(0.9, 0.45, clampf(spd / 35.0, 0.0, 1.0)), 0.05)
+	_zoom = lerpf(_zoom, lerpf(1.1, 0.42, clampf(spd / 35.0, 0.0, 1.0)), 0.04)
 	var sc := _zoom
 	var p := player.global_position
-	# dünya → harita: merkez + dönüş(yaw) * ölçek * (nokta - oyuncu)
-	minimap.draw_set_transform(center, player.yaw, Vector2(sc, sc))
-	var off := Vector2(-p.x, -p.z)
-	var tex := world.map_texture()
-	if tex:
-		minimap.draw_texture_rect(tex, Rect2(off + Vector2(-world.T_HALF, -world.T_HALF) - Vector2(world.T_STEP, world.T_STEP) * 0.5, Vector2(world.T_HALF, world.T_HALF) * 2.0 + Vector2(world.T_STEP, world.T_STEP)), false)
-	for r in world.blocks:
-		minimap.draw_rect(Rect2(r.position + off, r.size), Color(0.42, 0.43, 0.48))
-	var road_col := Color(0.92, 0.92, 0.94)
-	for e in world.extra_roads:
-		minimap.draw_line(e[0] + off, e[1] + off, road_col, e[2])
-	var g := world.GRID
-	for i in range(-g, g + 1):
-		var a := Vector2(i * world.CELL, -g * world.CELL - 6.0) + off
-		var b := Vector2(i * world.CELL, g * world.CELL + 6.0) + off
-		minimap.draw_line(a, b, road_col, world.ROAD_W)
-		var c := Vector2(-g * world.CELL - 6.0, i * world.CELL) + off
-		var d := Vector2(g * world.CELL + 6.0, i * world.CELL) + off
-		minimap.draw_line(c, d, road_col, world.ROAD_W)
-	minimap.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	var xf := Transform2D(player.yaw, Vector2.ZERO)
-	var to_map := func(w: Vector3) -> Vector2:
-		return center + xf.basis_xform(Vector2(w.x - p.x, w.z - p.z) * sc)
-	# simge noktalar (dik durur)
-	var font := Game.font_display
+	minimap.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.1, 0.3, 0.44))
+	var xf := Transform2D(player.yaw, Vector2(sc, sc), 0.0, center) * Transform2D(0.0, Vector2(-p.x, -p.z))
+	MapPainter.draw_world(minimap, world, xf, sc, Rect2(Vector2.ZERO, sz))
+	# simge noktalar (dik)
 	for poi in world.pois:
-		var mp: Vector2 = to_map.call(poi.pos)
-		if mp.x < -10 or mp.y < -10 or mp.x > sz.x + 10 or mp.y > sz.y + 10:
-			continue
-		var st: Array = POI_STYLE.get(poi.kind, ["•", Color.WHITE])
-		minimap.draw_circle(mp, 8.0, Color(0.05, 0.05, 0.08, 0.9))
-		minimap.draw_arc(mp, 8.0, 0, TAU, 20, st[1], 2.0)
-		if font:
-			minimap.draw_string(font, mp + Vector2(-4.5, 5.0), st[0], HORIZONTAL_ALIGNMENT_CENTER, 9, 13, st[1])
-	# araçlar
+		var mp: Vector2 = xf * Vector2(poi.pos.x, poi.pos.z)
+		if Rect2(Vector2(-10, -10), sz + Vector2(20, 20)).has_point(mp):
+			MapPainter.draw_icon(minimap, mp, String(poi.kind), 8.0)
+	if Game.has_waypoint:
+		var wp: Vector2 = xf * Vector2(Game.waypoint.x, Game.waypoint.z)
+		wp = Vector2(clampf(wp.x, 10, sz.x - 10), clampf(wp.y, 24, sz.y - 6))
+		MapPainter.draw_waypoint(minimap, wp)
 	for car in get_tree().get_nodes_in_group("cars"):
-		var cp: Vector2 = to_map.call((car as Node3D).global_position)
-		if cp.distance_to(center) < 400:
-			minimap.draw_circle(cp, 3.5, Color(0.3, 0.7, 1.0))
-	# oyuncu oku
-	var pts := PackedVector2Array([center + Vector2(0, -11), center + Vector2(8, 8), center + Vector2(0, 4), center + Vector2(-8, 8)])
-	minimap.draw_colored_polygon(pts, Color.WHITE)
-	minimap.draw_rect(Rect2(Vector2.ZERO, sz), Color(0, 0, 0, 0.6), false, 3.0)
+		var cp: Vector2 = xf * Vector2((car as Node3D).global_position.x, (car as Node3D).global_position.z)
+		if Rect2(Vector2.ZERO, sz).has_point(cp) and car != player.car:
+			minimap.draw_circle(cp, 3.2, Color(0.3, 0.7, 1.0))
+	MapPainter.draw_player(minimap, center, 0.0, 9.0)
+	# kuzey işareti
+	var north: Vector2 = center + Vector2(0, -1).rotated(player.yaw) * (minf(sz.x, sz.y) * 0.5 - 12.0)
+	north = Vector2(clampf(north.x, 12, sz.x - 12), clampf(north.y, 12, sz.y - 12))
+	minimap.draw_circle(north, 9.0, Color(0, 0, 0, 0.75))
+	if Game.font_display:
+		minimap.draw_string(Game.font_display, north + Vector2(-9, 5), "K", HORIZONTAL_ALIGNMENT_CENTER, 18, 14, Color.WHITE)
+	minimap.draw_rect(Rect2(Vector2.ZERO, sz), Color(0, 0, 0, 0.7), false, 3.0)

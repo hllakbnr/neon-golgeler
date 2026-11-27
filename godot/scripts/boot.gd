@@ -17,6 +17,10 @@ func _ready() -> void:
 		await _pose_test()
 		get_tree().quit()
 		return
+	if OS.get_cmdline_user_args().has("--buildtest"):
+		await _build_test()
+		get_tree().quit()
+		return
 	if Updater.should_run():
 		var up := Updater.new()
 		add_child(up)
@@ -55,9 +59,9 @@ func _capture_keyart() -> void:
 	## anahtar görseller ayrı bir SubViewport'ta çekilir (yükleme ekranı açık kalır), diske de kaydedilir
 	var M := World.MON
 	var shots := [
-		[Vector3(-163, 2.2, 76), Vector3(-158, 8.0, 10), 18.0],            # Eski Çarşı fenerleri
-		[Vector3(-70, 3.0, 334), Vector3(40, 2.5, 352), 11.0],              # Sahil
-		[Vector3(-210, 70, 230), Vector3(120, 40, -150), 21.5],             # gece Neon Bulvar + kule
+		[Vector3(-163, 2.2, -8), Vector3(-158, 8.0, -80), 18.0],            # Eski Çarşı fenerleri
+		[Vector3(-418, 3.0, 30), Vector3(-482, 2.0, 220), 11.0],            # Sahil
+		[Vector3(-560, 90, 520), Vector3(100, 40, -150), 21.5],             # gece Neon Şehir
 		[M + Vector3(70, 30, 150), M + Vector3(0, 8, -10), 8.0],            # Kasırga Manastırı
 	]
 	var sv := SubViewport.new()
@@ -116,34 +120,37 @@ func _start_game() -> void:
 	# park hâlindeki araçlar (yol kenarında)
 	var M := World.MON
 	var parked := [["sedan-sports", Vector3(-84.6, 0.5, -46.0), 0.0], ["taxi", Vector3(-84.6, 0.5, -24.0), 0.0], ["suv", Vector3(-75.4, 0.5, -12.0), PI],
-		["police", Vector3(-4.6, 0.5, -120.0), 0.0], ["hatchback-sports", Vector3(84.6, 0.5, 30.0), 0.0], ["van", Vector3(-164.6, 0.5, 60.0), 0.0],
+		["police", Vector3(-155.4, 0.5, 30.0), 0.0], ["hatchback-sports", Vector3(84.6, 0.5, 30.0), 0.0], ["van", Vector3(-164.6, 0.5, 60.0), 0.0],
 		["suv-luxury", Vector3(20.0, 0.5, 235.4), -PI * 0.5], ["sedan", Vector3(124.0, 0.5, -155.4), PI * 0.5],
-		["sedan-sports", Vector3(60.0, 0.6, 335.0), -PI * 0.5], ["truck", Vector3(-345.0, 1.9, 70.0), 0.0],
-		["suv", M + Vector3(-2.0, 1.5, 64.0), PI], ["police", Vector3(World.ISLE.x - 70.0, 3.8, World.ISLE.y + 8.0), -PI * 0.5],
-		["hatchback-sports", Vector3(World.EDGE + 40.0, 1.2, -4.0), -PI * 0.5]]
+		["truck", Vector3(-440.0, 0.6, -40.0), 0.0], ["sedan-sports", Vector3(-430.0, 0.6, -110.0), PI],
+		["suv", Vector3(225.0, -1.0, -925.0), PI], ["hatchback-sports", Vector3(450.0, -1.0, 4.0), -PI * 0.5],
+		["police", Vector3(-1000.0, -1.0, -920.0), 0.0], ["suv", Vector3(2930.0, -1.0, 1660.0), PI]]
 	for p in parked:
 		var c := Car.new()
 		c.model = p[0]
 		world.add_child(c)
-		c.global_position = p[1]
+		var pos: Vector3 = p[1]
+		if pos.y < 0.0:
+			pos.y = world.ground_y(pos.x, pos.z) + 1.2
+		c.global_position = pos
 		c.rotation.y = p[2]
 	ld.step(0.45, "Trafik başlıyor")
 	await get_tree().process_frame
 	# trafik: her araç farklı bir kavşaktan başlar (üst üste doğmaz)
 	var nodes := []
-	for x in range(-World.GRID, World.GRID + 1):
-		for y in range(-World.GRID, World.GRID + 1):
+	for x in range(-World.GX, World.GX + 1):
+		for y in range(-World.GZ, World.GZ + 1):
 			if Vector3(x * World.CELL, 0, y * World.CELL).distance_to(SPAWN) > 40.0:
 				nodes.append(Vector2i(x, y))
 	nodes.shuffle()
 	var dirs := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
-	for i in range(mini(30, nodes.size())):
+	for i in range(mini(34, nodes.size())):
 		var a: Vector2i = nodes[i]
 		dirs.shuffle()
 		var to := a
 		for d in dirs:
 			var n: Vector2i = a + d
-			if absi(n.x) <= World.GRID and absi(n.y) <= World.GRID:
+			if world.node_ok(n):
 				to = n
 				break
 		var t := TrafficCar.new()
@@ -159,7 +166,7 @@ func _start_game() -> void:
 	for k in Game.SLOTS.keys():
 		if String(k).begins_with("yaya"):
 			yaya_slots.append(k)
-	for i in range(72):
+	for i in range(80):
 		var r: Rect2 = world.blocks[(i * 7) % world.blocks.size()]
 		var loop := world.sidewalk_loop(r)
 		var n := Pedestrian.new()
@@ -194,11 +201,30 @@ func _start_game() -> void:
 
 
 func _unhandled_input(e: InputEvent) -> void:
+	if playing and e.is_action_pressed("map") and not get_tree().paused:
+		open_map()
+		get_viewport().set_input_as_handled()
+		return
 	if playing and e.is_action_pressed("pause") and not get_tree().paused:
 		_pause()
 		get_viewport().set_input_as_handled()
 	if playing and e is InputEventMouseButton and e.pressed and not get_tree().paused:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func open_map() -> MapScreen:
+	var m := MapScreen.new()
+	m.world = world
+	m.player = player
+	get_tree().paused = true
+	Game.paused = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	m.closed.connect(func():
+		get_tree().paused = false
+		Game.paused = false
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if Game.shots_dir == "" else Input.MOUSE_MODE_VISIBLE)
+	add_child(m)
+	return m
 
 
 func _pause() -> void:
@@ -331,6 +357,30 @@ func _pose_test() -> void:
 	await Game.shot("poz_panel")
 
 
+func _build_test() -> void:
+	## yerel/CI hızlı deneme: dünyayı kur, oyunu başlat, birkaç saniye oynat, haritayı aç (çizim beklemez)
+	await get_tree().process_frame
+	var t0 := Time.get_ticks_msec()
+	world = World.new()
+	add_child(world)
+	await world.build(Callable())
+	print("DUNYA %d ms, poi %d, kapı %d, bina %d" % [Time.get_ticks_msec() - t0, world.pois.size(), world.doors.size(), world.data.city.buildings.size()])
+	menu_cam = Camera3D.new()
+	world.add_child(menu_cam)
+	menu = MainMenu.new()
+	add_child(menu)
+	await _start_game()
+	for k in range(120):
+		await get_tree().physics_frame
+	print("OYUNCU ", player.global_position, " bölge=", world.district_name(player.global_position))
+	var r := world.route(player.global_position, Vector3(180, 0, -1000))
+	print("ROTA nokta=", r.size())
+	var mp := open_map()
+	await get_tree().process_frame
+	mp.queue_free()
+	print("BITTI")
+
+
 func _make_test_minifig(path: String) -> bool:
 	## tek yüzeyli, iskeletsiz, oyuncak figür benzeri test modeli üretip glb olarak yazar
 	var st := SurfaceTool.new()
@@ -448,14 +498,14 @@ func _run_shots() -> void:
 	_free_cam(Vector3(-118, 34, -118), Vector3(0, 12, 0))
 	await _wait(18)
 	await Game.shot("09_gece_merkez")
-	_free_cam(Vector3(-163, 2.2, 76), Vector3(-158, 8.0, 10))
+	_free_cam(Vector3(-163, 2.2, -8), Vector3(-158, 8.0, -80))
 	await _wait(16)
 	await Game.shot("10_eski_carsi")
 	_free_cam(Vector3(-6, 2.4, -58), Vector3(-6, 6.0, 10))
 	await _wait(16)
 	await Game.shot("11_gece_cadde")
 	_set_time(18.1)
-	_free_cam(Vector3(60, 3.0, 336), Vector3(-40, 4.0, 348))
+	_free_cam(Vector3(-418, 3.0, 30), Vector3(-482, 2.0, 220))
 	await _wait(18)
 	await Game.shot("12_sahil_gunbatimi")
 	_set_time(15.0)
@@ -463,7 +513,7 @@ func _run_shots() -> void:
 	await _wait(16)
 	await Game.shot("13_monoray")
 	# ada: havadan, manastır, köprü, liman
-	_free_cam(Vector3(0, 650, 1050), Vector3(0, 0, -180))
+	_free_cam(Vector3(500, 2300, 3600), Vector3(900, 0, 1200))
 	await _wait(18)
 	await Game.shot("18_ada_hava")
 	var M := World.MON
@@ -472,13 +522,32 @@ func _run_shots() -> void:
 	await _wait(18)
 	await Game.shot("19_manastir")
 	_set_time(19.8)
-	_free_cam(Vector3(World.BRIDGE_X0 - 30, 16, 40), Vector3((World.BRIDGE_X0 + World.BRIDGE_X1) * 0.5, 8, 0))
+	_free_cam(Vector3(-520, 24, -240), Vector3(-760, 14, -650))
 	await _wait(18)
 	await Game.shot("20_kopru")
 	_set_time(17.2)
-	_free_cam(Vector3(-World.EDGE + 10, 14, 30), Vector3(-World.EDGE - 60, 2, 150))
+	_free_cam(Vector3(-400, 16, 0), Vector3(-470, 2, -200))
 	await _wait(18)
 	await Game.shot("21_liman")
+	_set_time(12.0)
+	for spec in [["28_col", Vector3(950, 70, 250), Vector3(1250, 10, 800)], ["29_gecit", Vector3(1880, 90, 560), Vector3(2100, 45, 640)],
+			["30_sis", Vector3(2830, 30, 1820), Vector3(2950, 3, 1950)], ["31_lunapark", Vector3(70, 32, 150), Vector3(200, 12, 280)],
+			["32_kanyon", Vector3(1150, 120, 1700), Vector3(1400, 30, 2050)], ["33_huslar", Vector3(2450, 90, -150), Vector3(2700, 40, -350)]]:
+		var g := world.ground_y(spec[1].x, spec[1].z)
+		_free_cam(spec[1] + Vector3(0, maxf(0.0, g + 15.0 - spec[1].y), 0), spec[2])
+		await _wait(14)
+		await Game.shot(spec[0])
+	var mp := open_map()
+	await _wait(8)
+	await Game.shot("34_harita")
+	mp._zoom = 0.9
+	mp._cam = Vector2(0, 0)
+	mp.canvas.queue_redraw()
+	await _wait(4)
+	await Game.shot("35_harita_sehir")
+	mp.closed.emit()
+	mp.queue_free()
+	await _wait(2)
 	# arazi çarpışması: oyuncu tepede yürüyebiliyor mu
 	_set_time(13.0)
 	var tp := Vector3(60, world.terrain_h(60, -430) + 1.5, -430)
