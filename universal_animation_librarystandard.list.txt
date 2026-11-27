@@ -1,0 +1,16 @@
+Archive:  /tmp/universal_animation_librarystandard.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+        0  2025-03-19 11:01   Animation Library[Standard]/
+        0  2025-03-19 10:53   Animation Library[Standard]/Godot/
+  6671104  2025-03-25 18:55   Animation Library[Standard]/Godot/AnimationLibrary_Godot_Standard.glb
+      446  2025-03-19 10:54   Animation Library[Standard]/License.txt
+  2424027  2025-03-19 10:21   Animation Library[Standard]/Preview.png
+        0  2025-03-19 10:53   Animation Library[Standard]/Unity/
+ 20623420  2025-03-25 18:54   Animation Library[Standard]/Unity/AnimationLibrary_Unity_Standard.fbx
+   237945  2025-03-19 10:21   Animation Library[Standard]/Unity_Setup.png
+        0  2025-03-19 10:52   Animation Library[Standard]/Unreal Engine/
+ 24856556  2025-03-25 18:41   Animation Library[Standard]/Unreal Engine/AL_Standard.fbx
+   347727  2025-03-20 21:17   Animation Library[Standard]/UnrealEngine_Setup.png
+---------                     -------
+ 55161225                     11 files
