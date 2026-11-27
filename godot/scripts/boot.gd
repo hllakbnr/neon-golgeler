@@ -284,6 +284,10 @@ func _pose_test() -> void:
 	for k in range(3):
 		await get_tree().process_frame
 	await Game.shot("poz_yakin")
+	cam.look_at_from_position(Vector3(3.2, 2.0, 3.6), Vector3(3.2, 1.0, -3.2), Vector3.UP)
+	for k in range(3):
+		await get_tree().process_frame
+	await Game.shot("poz_minifig")
 
 
 func _make_test_minifig(path: String) -> bool:
