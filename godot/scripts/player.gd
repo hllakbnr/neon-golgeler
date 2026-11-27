@@ -32,6 +32,9 @@ var talk: TalkMenu = null
 var phone: Phone = null
 var powers: Powers
 var mount: Dragon = null
+var _was_floor := true
+var _fall_v := 0.0
+var _lean := 0.0
 
 
 func _ready() -> void:
@@ -183,6 +186,22 @@ func _physics_process(delta: float) -> void:
 		visual.rotation.y = lerp_angle(visual.rotation.y, target, min(1.0, delta * 10.0))
 	if not combat.dead:
 		visual.set_motion(hs, is_on_floor())
+	# iniş: yüksekten düşünce çöküp kalkar; koşarken dönüşlerde gövde içe yatar
+	var fl := is_on_floor()
+	if not fl:
+		_fall_v = minf(_fall_v, velocity.y)
+	elif not _was_floor:
+		if _fall_v < -9.0 and not powers.spinning():
+			visual.action("land", 1.2)
+			shake(0.15)
+			Fx.dust(global_position, 0.8)
+		_fall_v = 0.0
+	_was_floor = fl
+	var turn := 0.0
+	if hs > 4.0 and combat.busy <= 0.0:
+		turn = clampf(angle_difference(visual.rotation.y, atan2(velocity.x, velocity.z)) * hs * 0.035, -0.16, 0.16)
+	_lean = lerpf(_lean, turn, minf(1.0, delta * 6.0))
+	visual.rotation.z = _lean
 	# koşarken kamera biraz geri çekilir, FOV açılır
 	var sprinting := hs > 6.0
 	_follow_cam(delta, global_position + Vector3(0, 1.55, 0), 3.6 if sprinting else 3.1, 0.55)

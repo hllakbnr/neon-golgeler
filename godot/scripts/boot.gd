@@ -662,7 +662,7 @@ func _run_shots() -> void:
 	# dövüş: katana, yaya karşılık veriyor; aranma yıldızları; silah çarkı; etkileşim menüsü
 	_set_time(18.2)
 	player.global_position = Vector3(-88.5, 0.3, -52.0)
-	player.yaw = PI + 0.7
+	player.yaw = PI + 0.25
 	player.visual.rotation.y = 0.0
 	var foe := Pedestrian.new()
 	foe.world = world
@@ -710,10 +710,14 @@ func _run_shots() -> void:
 	await Game.shot("40_kasirga")
 	player.powers._spin_end()
 	await _wait(6)
+	player.global_position = Vector3(-440.0, 1.0, 170.0)
+	player.velocity = Vector3.ZERO
+	_set_time(17.6)
+	await _wait(6)
 	player.powers._summon()
 	await _wait(5)
-	player.pitch = -0.25
-	player.yaw = PI + 0.4
+	player.pitch = -0.12
+	player.yaw = PI * 0.5
 	for j in range(40):
 		Input.action_press("move_forward")
 		await get_tree().process_frame

@@ -267,6 +267,25 @@ def _make_skins():
         for i in range(3):
             d.arc((cx - 34 + i * 6, cy - 30 + i * 10, cx + 34 - i * 6, cy + 10 + i * 10), 200, 340, fill=(240, 250, 255, 255), width=6)
     _recolor(src, os.path.join(tdir, 'ela.png'), ela, ela_extra)
+    # Kaan için satın alınabilir gi'ler (butik / gardırop): (dosya, koyu ton, açık ton, kuşak)
+    gis = [('kaan_ates.png', (120, 14, 10), (230, 40, 22), (255, 200, 40)),
+           ('kaan_simsek.png', (14, 40, 120), (40, 110, 240), (255, 230, 60)),
+           ('kaan_buz.png', (170, 180, 195), (245, 248, 255), (90, 170, 255)),
+           ('kaan_toprak.png', (40, 26, 14), (120, 80, 40), (30, 30, 30)),
+           ('kaan_yesil.png', (10, 70, 24), (40, 190, 70), (240, 200, 40)),
+           ('kaan_golge.png', (8, 8, 10), (40, 40, 46), (110, 20, 30))]
+    for fname, c0, c1, belt in gis:
+        def gi(x, y, r, g, b, c0=c0, c1=c1, belt=belt):
+            if is_skin(r, g, b):
+                return None
+            if is_belt(r, g, b):
+                return belt
+            v = shade(r, g, b)
+            if 40 < v < 130:
+                k = (v - 40) / 90.0
+                return tuple(int(c0[i] + (c1[i] - c0[i]) * k) for i in range(3))
+            return None
+        _recolor(src, os.path.join(tdir, fname), gi, None)
     try:
         _montage(tdir)
     except Exception as e:

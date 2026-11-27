@@ -250,6 +250,8 @@ func _process(_d: float) -> void:
 	if _area_check <= 0.0 and world:
 		_area_check = 0.5
 		var nm := world.district_name(player.global_position)
+		if world.interiors and world.interiors.inside():
+			nm = String(world.interiors.current_door.get("name", ""))
 		if nm != "" and nm != _area_name:
 			toast(nm.to_upper())
 	_area_t -= _d
@@ -291,6 +293,14 @@ func _draw_map() -> void:
 	_zoom = lerpf(_zoom, lerpf(1.1, 0.42, clampf(spd / 35.0, 0.0, 1.0)), 0.04)
 	var sc := _zoom
 	var p := player.global_position
+	if world.interiors and world.interiors.inside():
+		minimap.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.06, 0.05, 0.1))
+		for k in 8:
+			minimap.draw_line(Vector2(0, k * 30.0), Vector2(sz.x, k * 30.0), Color(1, 1, 1, 0.05), 1.0)
+		var f: Font = Game.font_display if Game.font_display else ThemeDB.fallback_font
+		minimap.draw_string(f, Vector2(0, sz.y * 0.5 + 10), "İÇ MEKÂN", HORIZONTAL_ALIGNMENT_CENTER, sz.x, 30, Color(1, 1, 1, 0.5))
+		minimap.draw_rect(Rect2(Vector2.ZERO, sz), Color(0, 0, 0, 0.7), false, 3.0)
+		return
 	minimap.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.1, 0.3, 0.44))
 	var xf := Transform2D(player.yaw, Vector2(sc, sc), 0.0, center) * Transform2D(0.0, Vector2(-p.x, -p.z))
 	MapPainter.draw_world(minimap, world, xf, sc, Rect2(Vector2.ZERO, sz))
@@ -409,4 +419,4 @@ func _draw_overlay() -> void:
 		var c := overlay.size * 0.5 + Vector2(0, 80)
 		overlay.draw_arc(c, 26.0, -PI * 0.5, -PI * 0.5 + TAU * wt.arrest_progress(), 32, Color(0.4, 0.6, 1.0), 5.0)
 		if Game.font_ui:
-			overlay.draw_string(Game.font_ui, c + Vector2(-120, 52), "Tutuklanıyorsun — kaç ya da karşı koy!", HORIZONTAL_ALIGNMENT_CENTER, 240, 16, Color.WHITE)
+			overlay.draw_string(Game.font_ui, c + Vector2(-260, 52), "Tutuklanıyorsun — kaç ya da karşı koy!", HORIZONTAL_ALIGNMENT_CENTER, 520, 18, Color.WHITE)

@@ -72,7 +72,7 @@ func _spin_start() -> void:
 	spin_t = 4.0
 	spin_cd = 3.0
 	_hit_t = 0.0
-	_attach_vortex(1.0)
+	_attach_vortex(0.85)
 	Sfx.play("swoosh_big", p.global_position, 0.0)
 	_snd = AudioStreamPlayer3D.new()
 	_snd.stream = Sfx.stream("swoosh_big")
@@ -269,7 +269,7 @@ func _airjitzu() -> void:
 	p.velocity.y = 8.5
 	air_t = 2.2
 	if spin_t <= 0.0:
-		_attach_vortex(0.6)
+		_attach_vortex(0.5)
 	Sfx.play("swoosh_big", p.global_position, -4.0, 1.3)
 
 

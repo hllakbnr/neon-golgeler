@@ -480,6 +480,14 @@ func _club(root: Node3D, body: StaticBody3D, W: float, D: float, H: float) -> vo
 	anim_t.timeout.connect(func():
 		for n in 64:
 			tiles.set_instance_color(n, neon[randi() % 4] * randf_range(0.3, 1.0)))
+	# renkli ortam ışıkları (kulüp karanlık ama görünür olsun)
+	for k in 6:
+		var ol := OmniLight3D.new()
+		ol.light_color = neon[k % 4]
+		ol.light_energy = 2.2
+		ol.omni_range = 9.0
+		ol.position = Vector3((k % 3 - 1) * W * 0.32, H - 1.5, (k / 3 - 0.5) * D * 0.45)
+		root.add_child(ol)
 	# DJ kabini
 	_box(root, body, Vector3(0, 0.6, D * 0.5 - 6.5), Vector3(4.0, 1.2, 1.4), Game.paint(Color(0.1, 0.1, 0.12), 0.6, 0.3))
 	_neon(root, Vector3(0, 1.22, D * 0.5 - 7.21), Vector3(4.0, 0.06, 0.04), Color(0.1, 0.9, 1.0))
