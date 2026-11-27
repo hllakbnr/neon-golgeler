@@ -80,6 +80,7 @@ func segment(geoms: Array) -> Dictionary:
 						lab[i] = 5
 				waist = r.y
 	_absorb(0.008 * tot)
+	_attach_loose()
 	# üçgen etiketleri (çoğunluk)
 	var TL := PackedByteArray()
 	TL.resize(T)
@@ -492,6 +493,77 @@ func _absorb(min_a: float) -> void:
 		if bl >= 0:
 			for v in comp:
 				lab[v] = bl
+
+
+func _attach_loose() -> void:
+	## kopuk küçük parçalar (ayrı el, ayakkabı, kol aksesuarı): en çok değdiği/içine girdiği uzvun etiketini alır.
+	## Oyuncak figürlerinde eller ve ayaklar çoğu zaman ayrı parçadır; yoksa gövdede kalıp koldan kopuk görünür.
+	var comp := PackedInt32Array()
+	comp.resize(n)
+	comp.fill(-1)
+	var comps := []
+	for s in n:
+		if comp[s] >= 0:
+			continue
+		var id := comps.size()
+		var verts := PackedInt32Array()
+		var lo := Vector3(INF, INF, INF)
+		var hi := Vector3(-INF, -INF, -INF)
+		var st := PackedInt32Array([s])
+		comp[s] = id
+		while st.size() > 0:
+			var v := st[st.size() - 1]
+			st.remove_at(st.size() - 1)
+			verts.append(v)
+			var p := Vector3(X[v], Y[v], Z[v])
+			lo = lo.min(p)
+			hi = hi.max(p)
+			for k in range(AP[v], AP[v + 1]):
+				var w := ADJ[k]
+				if comp[w] < 0:
+					comp[w] = id
+					st.append(w)
+		comps.append([verts, lo, hi])
+	if comps.size() < 2:
+		return
+	var dom := PackedInt32Array()
+	for c in comps:
+		var cnt := PackedFloat64Array([0, 0, 0, 0, 0, 0])
+		for v: int in c[0]:
+			cnt[lab[v]] += VA[v]
+		var best := 0
+		for L in 6:
+			if cnt[L] > cnt[best]:
+				best = L
+		dom.append(best)
+	var moved := 0
+	for ci in comps.size():
+		var c: Array = comps[ci]
+		var lo: Vector3 = c[1]
+		var hi: Vector3 = c[2]
+		if (dom[ci] != 0 and dom[ci] != 5) or hi.y - lo.y > 0.3 * H:
+			continue
+		var limb_sep := INF
+		var limb_l := -1
+		var core_sep := INF
+		for cj in comps.size():
+			if cj == ci:
+				continue
+			var d: Array = comps[cj]
+			var dlo: Vector3 = d[1]
+			var dhi: Vector3 = d[2]
+			var sep := maxf(maxf(maxf(dlo.x - hi.x, lo.x - dhi.x), maxf(dlo.y - hi.y, lo.y - dhi.y)), maxf(dlo.z - hi.z, lo.z - dhi.z))
+			if dom[cj] >= 1 and dom[cj] <= 4:
+				if sep < limb_sep:
+					limb_sep = sep
+					limb_l = dom[cj]
+			elif sep < core_sep:
+				core_sep = sep
+		if limb_l > 0 and limb_sep < 0.03 * H and limb_sep < core_sep - 0.004 * H:
+			for v: int in c[0]:
+				lab[v] = limb_l
+			moved += 1
+	info["loose_attached"] = moved
 
 
 # ---------------------------------------------------------------- 5) bacaklar
