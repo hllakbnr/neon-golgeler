@@ -63,19 +63,19 @@ func _start_game() -> void:
 	player = Player.new()
 	player.world = world
 	world.add_child(player)
-	player.global_position = Vector3(-40 + 8.0, 0.4, 40 - 1.0)
-	player.yaw = PI * 0.75
+	player.global_position = Vector3(-8.0, 0.4, 10.0)
+	player.yaw = PI
 	ld.set_progress(0.25)
 	await get_tree().process_frame
 	# park hâlindeki araçlar
 	var colors := [Color(0.75, 0.05, 0.08), Color(0.95, 0.95, 0.95), Color(0.05, 0.05, 0.06), Color(0.1, 0.35, 0.75), Color(0.85, 0.6, 0.1)]
-	var spots := [Vector3(-40 + 4.2, 0.6, 46), Vector3(-40 + 4.2, 0.6, 58), Vector3(4.2, 0.6, -20), Vector3(-4.2, 0.6, 20), Vector3(36, 0.6, -4.2)]
+	var spots := [Vector3(-5.0, 0.6, 22), Vector3(-5.0, 0.6, 34), Vector3(5.0, 0.6, -24), Vector3(-5.0, 0.6, 58), Vector3(24, 0.6, 5.0)]
 	for i in spots.size():
 		var c := Car.new()
 		c.body_color = colors[i % colors.size()]
 		world.add_child(c)
 		c.global_position = spots[i]
-		c.rotation.y = 0.0 if i < 4 else PI * 0.5
+		c.rotation.y = (PI if spots[i].x > 0 else 0.0) if i < 4 else -PI * 0.5
 	ld.set_progress(0.5)
 	await get_tree().process_frame
 	# trafik
@@ -174,9 +174,10 @@ func _run_shots() -> void:
 	await Game.shot("07_arac")
 	# yakın plan karakter
 	player.exit_car()
+	player.global_position = Vector3(-8.0, 0.3, 14.0)
+	player.visual.rotation.y = PI
 	player.yaw = 0.0
-	player.pitch = -0.05
-	player.arm.spring_length = 1.8
+	player.pitch = -0.12
 	await _wait(40)
 	await Game.shot("08_karakter")
 	_pause()

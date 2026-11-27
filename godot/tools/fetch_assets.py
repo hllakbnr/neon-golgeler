@@ -36,14 +36,18 @@ def try_dl(url, path):
 
 
 def pick(assets, keywords, exclude=()):
-    best = None
-    for aid, a in assets.items():
-        text = (aid + ' ' + ' '.join(a.get('tags', [])) + ' ' + ' '.join(a.get('categories', []))).lower()
-        if any(k in aid.lower() for k in keywords) and not any(x in text for x in exclude):
-            score = a.get('download_count', 0)
-            if best is None or score > best[1]:
-                best = (aid, score)
-    return best[0] if best else None
+    # anahtar kelimeler öncelik sırasıyla denenir; eşleşenler arasında en çok indirilen seçilir
+    for k in keywords:
+        best = None
+        for aid, a in assets.items():
+            text = (aid + ' ' + ' '.join(a.get('tags', [])) + ' ' + ' '.join(a.get('categories', []))).lower()
+            if k in aid.lower() and not any(x in text for x in exclude):
+                score = a.get('download_count', 0)
+                if best is None or score > best[1]:
+                    best = (aid, score)
+        if best:
+            return best[0]
+    return None
 
 
 def polyhaven():
@@ -55,7 +59,7 @@ def polyhaven():
         return
     want_tex = {
         'asphalt': (['asphalt', 'road'], ()),
-        'sidewalk': (['paving', 'pavement', 'sidewalk', 'concrete_tiles'], ()),
+        'sidewalk': (['concrete_pavement', 'sidewalk', 'concrete_tiles', 'paving_tiles', 'pavement'], ()),
         'brick': (['brick_wall', 'red_brick', 'brick'], ('floor',)),
         'plaster': (['plaster', 'painted_plaster', 'stucco'], ()),
         'concrete': (['concrete_wall', 'concrete'], ('floor', 'tiles')),
@@ -83,7 +87,7 @@ def polyhaven():
     want_models = {
         'lamp': ['street_lamp', 'streetlamp', 'lamp_post', 'street_light'],
         'bench': ['bench'],
-        'bin': ['trash', 'bin', 'garbage'],
+        'bin': ['trash_can', 'trashcan', 'garbage', 'dumpster'],
         'hydrant': ['hydrant'],
         'plant': ['potted_plant', 'plant'],
         'barrier': ['barrier', 'bollard', 'cone'],

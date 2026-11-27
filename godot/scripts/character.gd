@@ -15,9 +15,9 @@ func setup(body: Color, joints: Color, hair := Color(0.08, 0.07, 0.07), hair_sty
 	if sc:
 		var m: Node3D = sc.instantiate()
 		add_child(m)
-		_normalize(m)
 		anim = _find(m, "AnimationPlayer") as AnimationPlayer
 		skeleton = _find(m, "Skeleton3D") as Skeleton3D
+		_normalize(m)
 		_tint(m, body, joints)
 		if anim:
 			for n in anim.get_animation_list():
@@ -42,16 +42,23 @@ func _find(n: Node, cls: String) -> Node:
 
 
 func _normalize(m: Node3D) -> void:
-	var aabb := AABB()
-	var first := true
-	for mi in m.find_children("*", "MeshInstance3D", true, false):
-		var b: AABB = (mi as MeshInstance3D).global_transform * (mi as MeshInstance3D).get_aabb()
-		aabb = b if first else aabb.merge(b)
-		first = false
-	if first or aabb.size.y < 0.01:
+	## İskeletteki kafa kemiğinin yüksekliğine göre ölçekle (~1,8 m boy)
+	if skeleton == null:
 		return
-	var s := 1.8 / aabb.size.y
-	if s < 0.5 or s > 2.0:
+	var head := -1
+	for i in skeleton.get_bone_count():
+		var bn := skeleton.get_bone_name(i).to_lower()
+		if bn.ends_with("head") and bn.find("top") < 0:
+			head = i
+			break
+	if head < 0:
+		return
+	var hp: Vector3 = skeleton.global_transform * skeleton.get_bone_global_rest(head).origin
+	var h := hp.y - m.global_position.y
+	if h < 0.001:
+		return
+	var s := 1.6 / h
+	if abs(s - 1.0) > 0.12:
 		m.scale *= s
 
 

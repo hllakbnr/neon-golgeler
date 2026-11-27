@@ -37,12 +37,19 @@ void fragment() {
 		float y = wpos.y;
 		if (y < ground_h) {
 			float cx = fract(hz / 5.0);
-			float inside = step(0.08, cx) * step(cx, 0.92) * step(0.35, y) * step(y, ground_h - 0.9);
-			float band = step(ground_h - 0.8, y);
+			float inside = step(0.06, cx) * step(cx, 0.94) * step(0.45, y) * step(y, ground_h - 1.0);
+			float mull = step(abs(fract(hz / 1.25) - 0.5), 0.03) * inside;            // cam çerçeveleri
+			float band = step(ground_h - 0.9, y);
 			float lit = hash(vec2(floor(hz / 5.0), seed));
-			base = mix(base, vec3(0.03, 0.04, 0.05), inside);
-			rough = mix(rough, 0.04, inside);
-			emit += inside * mix(0.25, 1.0, night) * mix(vec3(1.0, 0.8, 0.55), vec3(0.6, 0.85, 1.0), step(0.6, lit)) * 1.4;
+			// iç mekân hissi: raflar / tavan ışığı bandı
+			float shelf = step(0.5, fract(y * 1.6)) * 0.35;
+			float ceil = smoothstep(ground_h - 1.4, ground_h - 1.0, y);
+			vec3 interior = mix(vec3(0.35, 0.3, 0.26), vec3(0.2, 0.24, 0.3), step(0.6, lit)) * (0.6 + shelf) + ceil * vec3(0.9, 0.85, 0.7);
+			base = mix(base, vec3(0.02, 0.025, 0.03), inside);
+			rough = mix(rough, 0.03, inside);
+			metal = mix(metal, 0.1, inside);
+			emit += inside * (1.0 - mull) * interior * mix(0.04, 0.55, night) * step(0.15, lit);
+			base = mix(base, vec3(0.12), mull);
 			base = mix(base, trim.rgb * 0.85, band);
 			win_any = inside;
 		} else {

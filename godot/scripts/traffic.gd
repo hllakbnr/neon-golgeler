@@ -41,7 +41,7 @@ func _node_pos(n: Vector2i) -> Vector3:
 
 func _lane_offset(a: Vector2i, b: Vector2i) -> Vector3:
 	var d := Vector3(b.x - a.x, 0, b.y - a.y).normalized()
-	return Vector3(-d.z, 0, d.x) * -3.2   # sağ şerit
+	return Vector3(-d.z, 0, d.x) * -2.9   # sağ şerit
 
 
 func _place() -> void:
