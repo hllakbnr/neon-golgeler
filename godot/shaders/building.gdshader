@@ -66,7 +66,7 @@ void fragment() {
 			rough = mix(rough, 0.03, win);
 			metal = mix(metal, 0.35, win);
 			float lit = step(0.5, r) * win;
-			emit += lit * night * mix(vec3(1.0, 0.78, 0.5), vec3(0.75, 0.85, 1.0), step(0.78, r)) * 1.3;
+			emit += lit * night * mix(vec3(1.0, 0.78, 0.5), vec3(0.75, 0.85, 1.0), step(0.78, r)) * 0.75;
 			base *= 1.0 - win * 0.25 * (1.0 - f.y);
 			win_any = win;
 		}
