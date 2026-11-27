@@ -42,13 +42,13 @@ void fragment() {
 			float band = step(ground_h - 0.9, y);
 			float lit = hash(vec2(floor(hz / 5.0), seed));
 			// iç mekân hissi: raflar / tavan ışığı bandı
-			float shelf = step(0.5, fract(y * 1.6)) * 0.35;
+			float shelf = step(0.5, fract(y * 1.6)) * 0.12;
 			float ceil = smoothstep(ground_h - 1.4, ground_h - 1.0, y);
-			vec3 interior = mix(vec3(0.35, 0.3, 0.26), vec3(0.2, 0.24, 0.3), step(0.6, lit)) * (0.6 + shelf) + ceil * vec3(0.9, 0.85, 0.7);
+			vec3 interior = mix(vec3(0.35, 0.3, 0.26), vec3(0.2, 0.24, 0.3), step(0.6, lit)) * (0.6 + shelf) + ceil * vec3(0.5, 0.46, 0.4);
 			base = mix(base, vec3(0.02, 0.025, 0.03), inside);
 			rough = mix(rough, 0.03, inside);
 			metal = mix(metal, 0.1, inside);
-			emit += inside * (1.0 - mull) * interior * mix(0.04, 0.55, night) * step(0.15, lit);
+			emit += inside * (1.0 - mull) * interior * mix(0.02, 0.18, night) * step(0.15, lit);
 			base = mix(base, vec3(0.12), mull);
 			base = mix(base, trim.rgb * 0.85, band);
 			win_any = inside;
