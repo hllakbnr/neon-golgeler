@@ -156,6 +156,28 @@ def kenney():
     _make_skins()
 
 
+def animations():
+    """Quaternius Universal Animation Library 1 + 2 (CC0): gerçekçi insan hareketleri."""
+    packs = [
+        ('ual1', 'universal_animation_librarystandard.zip', 'AnimationLibrary_Godot_Standard.glb'),
+        ('ual2', 'universal_animation_library_2standard.zip', 'UAL2_Standard.glb'),
+    ]
+    for key, zname, inner in packs:
+        try:
+            data = get(KENNEY + zname)
+        except Exception as e:
+            print('  ✗ animasyon', zname, e)
+            continue
+        z = zipfile.ZipFile(io.BytesIO(data))
+        hit = [i for i in z.infolist() if i.filename.endswith('/' + inner) or i.filename == inner]
+        if not hit:
+            print('  ✗', inner, 'zip içinde yok')
+            continue
+        save(os.path.join(ROOT, 'anim', key + '.glb'), z.read(hit[0]))
+        manifest.setdefault('anim', {})[key] = 'res://assets/anim/%s.glb' % key
+        print('Animasyon', key, '←', zname, hit[0].file_size)
+
+
 def _recolor(src, dst, mapping, extra=None):
     from PIL import Image, ImageDraw
     im = Image.open(src).convert('RGBA')
@@ -243,6 +265,7 @@ def fonts():
 if __name__ == '__main__':
     polyhaven()
     kenney()
+    animations()
     characters()   # yalnızca CI testinde iskeletli özel model denemesi için
     fonts()
     with open(os.path.join(ROOT, 'manifest.json'), 'w', encoding='utf-8') as f:

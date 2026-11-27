@@ -24,12 +24,23 @@ jobs:
         run: |
           pip install -q pillow || true
           python3 godot/tools/fetch_assets.py
-      - name: Türkçe diyalog seslendirme (Piper TTS)
+      - name: Sürüm numarası
+        run: |
+          echo "${{ github.run_number }}" > godot/version.txt
+          cat godot/version.txt
+      - uses: actions/cache@v4
+        with:
+          path: ~/.local/share/tts
+          key: xtts-v2-model
+      - name: Türkçe diyalog seslendirme (XTTS v2, yedek Piper)
+        env: { COQUI_TOS_AGREED: "1" }
         run: |
           sudo apt-get update -qq > /dev/null || true
           sudo apt-get install -y -qq ffmpeg > /dev/null || true
+          pip install -q torch torchaudio --index-url https://download.pytorch.org/whl/cpu || true
+          pip install -q coqui-tts || true
           pip install -q piper-tts || true
-          python3 godot/tools/make_voices.py || true
+          timeout 1500 python3 godot/tools/make_voices.py || true
           ls -la godot/assets/voice || true
       - name: Varlıkları içe aktar
         working-directory: godot
@@ -52,11 +63,13 @@ jobs:
           timeout 900 godot --headless --export-release "Windows Desktop" build/NeonGolgeler.exe 2>&1 | tail -30
           ls -la build
       - name: Ekran görüntüleri (yazılım Vulkan)
+        id: shots
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq xvfb mesa-vulkan-drivers libvulkan1 > /dev/null
           mkdir -p shots
-          timeout 1500 xvfb-run -a -s "-screen 0 1600x900x24" godot --path godot --rendering-driver vulkan --resolution 1600x900 -- --shots=$PWD/shots 2>&1 | grep -vE "^\s*$" | tail -80 || true
+          timeout 1500 xvfb-run -a -s "-screen 0 1600x900x24" godot --path godot --rendering-driver vulkan --resolution 1600x900 -- --shots=$PWD/shots 2>&1 | grep -vE "^\s*$" | tail -120 || true
           ls -la shots || true
+          if [ -f shots/15_duraklat.png ]; then echo "ok=1" >> "$GITHUB_OUTPUT"; fi
       - name: Ekran görüntülerini ci-shots dalına gönder
         if: always()
         run: |
@@ -66,11 +79,28 @@ jobs:
           git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" ci-shots
       - uses: actions/upload-artifact@v4
         with: { name: NeonGolgeler-Godot-Windows, path: godot/build/NeonGolgeler.exe }
+      - name: Güncelleme bilgisi (version.json)
+        if: steps.shots.outputs.ok == '1'
+        run: |
+          printf '{"version": %s, "file": "NeonGolgeler.exe", "notes": "Neon Gölgeler sürüm %s"}\n' "${{ github.run_number }}" "${{ github.run_number }}" > godot/build/version.json
+          cat godot/build/version.json
       - uses: softprops/action-gh-release@v2
-        if: ${{ hashFiles('shots/15_duraklat.png') != '' }}
+        if: steps.shots.outputs.ok == '1'
         with:
           tag_name: godot-deneme-${{ github.run_number }}
           name: Godot deneme ${{ github.run_number }}
           prerelease: true
           make_latest: false
           files: godot/build/NeonGolgeler.exe
+      # oyun içi güncelleyici her zaman bu sabit etiketten okur
+      - uses: softprops/action-gh-release@v2
+        if: steps.shots.outputs.ok == '1'
+        with:
+          tag_name: godot-guncel
+          name: Neon Gölgeler (otomatik güncelleme)
+          prerelease: false
+          make_latest: false
+          overwrite_files: true
+          files: |
+            godot/build/NeonGolgeler.exe
+            godot/build/version.json

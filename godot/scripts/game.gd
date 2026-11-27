@@ -32,9 +32,11 @@ var settings := {
 	"move_speed": 2,       # 0 yürü · 1 hızlı yürü · 2 hafif koşu
 	"render_scale": 1.0,
 	"subtitles": true,
+	"auto_update": true,
 	"voice_volume": 1.0,
 	"music_volume": 0.6,
 }
+var version := 0           # derleme numarası (res://version.txt, CI yazar)
 var time_of_day := 17.5    # saat (0..24)
 var day := 1
 var paused := false
@@ -53,6 +55,8 @@ func _ready() -> void:
 			shots_dir = a.substr(8)
 	if not RenderingServer.global_shader_parameter_get_list().has(&"night"):
 		RenderingServer.global_shader_parameter_add(&"night", RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.0)
+	if FileAccess.file_exists("res://version.txt"):
+		version = int(FileAccess.get_file_as_string("res://version.txt").strip_edges())
 	_load_manifest()
 	_load_settings()
 	_load_admin()
@@ -155,6 +159,7 @@ func _setup_input() -> void:
 	_key("handbrake", [KEY_SPACE], [JOY_BUTTON_A])
 	_key("pause", [KEY_ESCAPE], [JOY_BUTTON_START])
 	_key("time_fast", [KEY_T])
+	_key("crouch", [KEY_C, KEY_CTRL], [JOY_BUTTON_RIGHT_STICK])
 	# gamepad eksenleri
 	for pair in [["move_left", JOY_AXIS_LEFT_X, -1.0], ["move_right", JOY_AXIS_LEFT_X, 1.0], ["move_forward", JOY_AXIS_LEFT_Y, -1.0], ["move_back", JOY_AXIS_LEFT_Y, 1.0], ["throttle", JOY_AXIS_TRIGGER_RIGHT, 1.0], ["brake", JOY_AXIS_TRIGGER_LEFT, 1.0]]:
 		if not InputMap.has_action(pair[0]):

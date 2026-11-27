@@ -95,8 +95,6 @@ func _physics_process(delta: float) -> void:
 	var lon: bool = Game.night > 0.4
 	for l in lights.get("spots", []):
 		l.visible = lon
-	if lights.has("head"):
-		lights.head.emission_energy_multiplier = 3.0 if lon else 0.0
 	if lights.has("brake"):
 		lights.brake.emission_energy_multiplier = 5.0 if speed < prev - 0.01 or speed < 0.1 else (1.2 if lon else 0.3)
 	for wn in wheel_nodes:

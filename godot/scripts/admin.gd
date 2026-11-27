@@ -170,11 +170,12 @@ func _build_main() -> void:
 	preview = CharacterVisual.new()
 	vp.add_child(preview)
 	# animasyon düğmeleri
-	var anims := HBoxContainer.new()
-	anims.position = Vector2(320, 845)
+	var anims := HFlowContainer.new()
+	anims.position = Vector2(320, 840)
+	anims.size = Vector2(620, 100)
 	anims.add_theme_constant_override("separation", 6)
 	main.add_child(anims)
-	for a in [["Dur", "idle"], ["Yürü", "walk"], ["Koş", "sprint"], ["Sür", "drive"], ["Yumruk", "attack-melee-right"], ["Tekme", "attack-kick-right"], ["Düş", "die"], ["Selam", "emote-yes"]]:
+	for a in [["Dur", "idle"], ["Yürü", "walk"], ["Koş", "jog"], ["Depar", "sprint"], ["Eğil", "crouch_walk"], ["Yumruk", "punch_jab"], ["Kılıç", "sword_combo"], ["Fırlat", "throw"], ["Sür", "drive"], ["Düş", "die"], ["Dans", "dance"]]:
 		var an: String = a[1]
 		anims.add_child(_btn(a[0], func(): preview.play_once(an, 0.15)))
 	# sağ panel
@@ -192,6 +193,7 @@ func _build_main() -> void:
 	mode_l.custom_minimum_size = Vector2(580, 0)
 	side.add_child(mode_l)
 	side.add_child(_btn("3B model yükle (.glb / .gltf)", func(): _open("glb"), 560))
+	side.add_child(_btn("Yönünü çevir (model arkasını dönüyorsa)", _flip, 560))
 	side.add_child(_btn("Kostüm dokusu yükle (.png)", func(): _open("png"), 560))
 	side.add_child(_btn("Kostüm şablonunu kaydet (boyamak için)", func(): _open("save"), 560))
 	side.add_child(_btn("Varsayılana dön", _reset, 560))
@@ -220,8 +222,8 @@ func _select(id: String) -> void:
 	elif cfg.get("type", "") == "skin":
 		src = "Özel kostüm: " + String(cfg.path).get_file()
 	info.text = "%s\nKaynak: %s" % [Game.SLOTS[id][0], src]
-	var m := {"blocky": "Bloklu karakter + kostüm", "parts": "Parça adlarıyla bağlandı", "skinned": "İskelet algılandı → kemikler oyunun iskeletine bağlandı", "split": "İskelet yok → model otomatik parçalara bölündü", "fallback": "Model bulunamadı (yedek gövde)"}
-	mode_l.text = "Bağlantı: " + String(m.get(preview.mode, preview.mode))
+	var m := {"blocky": "Bloklu karakter + kostüm", "parts": "Parça adlarıyla (arm_R, leg_L…) bağlandı", "skinned": "İskelet algılandı → oyunun animasyonları kemiklere aktarıldı", "own": "İskelet algılandı → modelin kendi animasyonları kullanılıyor", "split": "İskelet yok → kollar ve bacaklar otomatik bulunup ayrıldı (Element Arenası yöntemi)", "fallback": "Model bulunamadı (yedek gövde)"}
+	mode_l.text = "Bağlantı: " + String(m.get(preview.mode, preview.mode)) + ("\n" + preview.note if preview.note != "" else "")
 	preview.play("walk")
 
 
@@ -254,6 +256,17 @@ func _on_file(path: String) -> void:
 		stored = "user://admin/files/%s_%d.%s" % [_cur, Time.get_unix_time_from_system(), ext]
 		DirAccess.copy_absolute(path, ProjectSettings.globalize_path(stored))
 	Game.admin.slots[_cur] = {"type": "glb" if ext in ["glb", "gltf"] else "skin", "path": stored}
+	Game.save_admin()
+	_apply_live()
+	_select(_cur)
+
+
+func _flip() -> void:
+	var cfg: Dictionary = Game.admin.slots.get(_cur, {})
+	if cfg.is_empty():
+		return
+	cfg["flip"] = not bool(cfg.get("flip", false))
+	Game.admin.slots[_cur] = cfg
 	Game.save_admin()
 	_apply_live()
 	_select(_cur)

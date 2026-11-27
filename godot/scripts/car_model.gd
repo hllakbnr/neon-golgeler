@@ -75,8 +75,8 @@ static func _box(p: Node3D, pos: Vector3, size: Vector3, m: Material) -> void:
 	p.add_child(mi)
 
 
-static func add_lights(parent: Node3D, info: Dictionary) -> Dictionary:
-	## farlar (SpotLight + parlayan yüzey) ve stop lambaları
+static func add_lights(parent: Node3D, info: Dictionary, shadows := false) -> Dictionary:
+	## farlar (yalnızca ışık; Kenney modelinde far zaten boyalı) ve gövdeye gömülü stop lambaları
 	var size: Vector3 = info.size
 	var c: Vector3 = info.center
 	var front := c.z + size.z * 0.5
@@ -87,40 +87,29 @@ static func add_lights(parent: Node3D, info: Dictionary) -> Dictionary:
 	brake.emission_enabled = true
 	brake.emission = Color(1, 0.05, 0.03)
 	brake.emission_energy_multiplier = 0.4
-	var head := StandardMaterial3D.new()
-	head.albedo_color = Color(0.95, 0.95, 0.9)
-	head.emission_enabled = true
-	head.emission = Color(1, 0.95, 0.85)
-	head.emission_energy_multiplier = 0.0
 	var spots: Array[SpotLight3D] = []
 	for s in [-1, 1]:
 		var tl := MeshInstance3D.new()
 		var bm := BoxMesh.new()
-		bm.size = Vector3(size.x * 0.18, 0.12, 0.04)
+		bm.size = Vector3(size.x * 0.16, 0.1, 0.06)
 		tl.mesh = bm
 		tl.material_override = brake
-		tl.position = Vector3(s * size.x * 0.36, hy, back - 0.02)
+		tl.position = Vector3(s * size.x * 0.34, hy, back + 0.02)
+		tl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		parent.add_child(tl)
-		var hl := MeshInstance3D.new()
-		var hm := BoxMesh.new()
-		hm.size = Vector3(size.x * 0.16, 0.1, 0.04)
-		hl.mesh = hm
-		hl.material_override = head
-		hl.position = Vector3(s * size.x * 0.34, hy, front + 0.02)
-		parent.add_child(hl)
 		var sl := SpotLight3D.new()
 		sl.light_color = Color(1, 0.95, 0.85)
 		sl.light_energy = 7.0
 		sl.spot_range = 38.0
 		sl.spot_angle = 30.0
 		sl.spot_attenuation = 0.8
-		sl.shadow_enabled = s > 0
-		sl.position = Vector3(s * size.x * 0.34, hy, front + 0.1)
+		sl.shadow_enabled = shadows and s > 0
+		sl.position = Vector3(s * size.x * 0.34, hy, front - 0.3)
 		sl.rotation = Vector3(-0.07, PI, 0)
 		sl.visible = false
 		sl.distance_fade_enabled = true
-		sl.distance_fade_begin = 60.0
-		sl.distance_fade_length = 20.0
+		sl.distance_fade_begin = 50.0
+		sl.distance_fade_length = 15.0
 		parent.add_child(sl)
 		spots.append(sl)
-	return {"brake": brake, "head": head, "spots": spots}
+	return {"brake": brake, "spots": spots}

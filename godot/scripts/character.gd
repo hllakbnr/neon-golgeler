@@ -1,24 +1,37 @@
 extends Node3D
 class_name CharacterVisual
-## Oyuncak tarzı karakter görseli + parça iskeleti (kök, bacaklar, gövde, kollar, kafa).
-##  • Varsayılan: Kenney "Blocky Characters" (CC0) + kostüm dokusu (Kaan/Ela için özel).
-##  • Admin bölümünden yüklenen modeller aynı iskelete bağlanır ve aynı animasyonları oynar:
-##      - parça adları olan modeller (head/torso/arm-left…) → doğrudan pivotlara takılır
-##      - iskeletli (Mixamo vb.) modeller → kemikler pivotlardan sürülür (PartDriver)
-##      - iskeletsiz tek parça modeller → otomatik olarak parçalara bölünür
+## Karakter görseli + parça iskeleti + gerçekçi animasyonlar (AnimLib / UAL, CC0).
+##  • Varsayılan: Kenney "Blocky Characters" (CC0) + kostüm dokusu (Kaan/Ela için özel)
+##  • Admin bölümünden yüklenen modeller (Element Arenası'ndaki sistemle aynı mantık):
+##      - parça adları olan modeller (arm_R, leg_L, hips…) → doğrudan eklemlere takılır
+##      - iskeletli modeller → kemiklere UAL animasyonları aktarılır (yoksa kendi animasyonları)
+##      - iskeletsiz tek parça modeller → kollar/bacaklar otomatik bulunup ayrılır (ModelImport)
 
 const SCALE := 0.68            # Kenney birimi (2,7) → ~1,84 m
 const RIG_H := 2.7
-const LOOPS := ["idle", "walk", "sprint", "sit", "drive", "holding-right", "holding-left", "holding-both", "wheelchair-sit", "static"]
+const KENNEY_LOOPS := ["idle", "walk", "sprint", "sit", "drive", "holding-right", "holding-left", "holding-both", "static"]
 const PARTS := ["root", "leg-left", "leg-right", "torso", "arm-left", "arm-right", "head"]
+## bulunamayan animasyon için yedekler
+const FALLBACK := {"jog": "sprint", "crouch_idle": "idle", "crouch_walk": "walk", "jump": "walk", "jump_start": "walk", "land": "idle",
+	"punch_jab": "attack-melee-right", "punch_cross": "attack-melee-left", "sword_a": "attack-melee-right", "sword_b": "attack-melee-left",
+	"sword_c": "attack-melee-right", "sword_attack": "attack-melee-right", "hit": "idle", "knockback": "die", "talk": "idle", "phone": "idle",
+	"block": "idle", "throw": "attack-melee-right", "spell": "attack-melee-right", "kick": "attack-kick-right", "consume": "pick-up"}
+## yürüme döngüsünün doğal hızı (m/s) — ayak kaymasın diye oynatma hızı buna göre ölçeklenir
+const NOMINAL := {"walk": 1.15, "jog": 2.8, "sprint": 4.6, "crouch_walk": 0.9, "swim": 1.4}
+
+static var _seg_cache := {}    # model yolu → segmentasyon sonucu
 
 var anim: AnimationPlayer
 var rig: Node3D               # Kenney sahnesinin kökü (animasyonun sürdüğü pivot ağacı)
-var pivots := {}              # parça adı → Node3D
+var pivots := {}
 var cur := ""
 var slot := ""
-var mode := "blocky"          # blocky | parts | skinned | split
-var driver: Node = null
+var mode := "blocky"          # blocky | parts | split | skinned | own | fallback
+var prefix := ""              # iskeletli modellerde "ual/"
+var own := {}                 # kendi animasyonlu modellerde eşleme
+var crouch := false
+var leg_len := 1.0
+var note := ""
 
 
 func setup(slot_id: String, skin := "") -> void:
@@ -27,12 +40,15 @@ func setup(slot_id: String, skin := "") -> void:
 		c.queue_free()
 	pivots.clear()
 	cur = ""
-	driver = null
+	prefix = ""
+	own.clear()
+	note = ""
 	var cfg: Dictionary = Game.slot_cfg(slot_id)
 	if cfg.get("type", "") == "glb" and FileAccess.file_exists(cfg.get("path", "")):
-		if _build_custom(cfg.path):
+		if _build_custom(cfg.path, bool(cfg.get("flip", false))):
 			return
 		push_warning("Özel model yüklenemedi: " + str(cfg.path))
+		note = "Model okunamadı, varsayılan karakter kullanılıyor."
 	var sk := skin
 	if cfg.get("type", "") == "skin":
 		sk = cfg.get("path", skin)
@@ -48,19 +64,21 @@ func _make_rig(hide_meshes: bool) -> bool:
 	rig = sc.instantiate()
 	rig.scale = Vector3.ONE * SCALE
 	add_child(rig)
-	anim = rig.find_children("*", "AnimationPlayer", true, false)[0] as AnimationPlayer if rig.find_children("*", "AnimationPlayer", true, false).size() > 0 else null
+	var aps := rig.find_children("*", "AnimationPlayer", true, false)
+	anim = aps[0] as AnimationPlayer if aps.size() > 0 else null
 	for p in PARTS:
-		var n := rig.find_child(p, true, false)
-		if n:
-			pivots[p] = n
+		var nd := rig.find_child(p, true, false)
+		if nd:
+			pivots[p] = nd
 	if hide_meshes:
 		for mi in rig.find_children("*", "MeshInstance3D", true, false):
 			(mi as MeshInstance3D).mesh = null
 	if anim:
-		for n in anim.get_animation_list():
-			var a := anim.get_animation(n)
-			if a:
-				a.loop_mode = Animation.LOOP_LINEAR if LOOPS.has(n) else Animation.LOOP_NONE
+		AnimLib.bake_blocky(get_tree(), anim)
+		for nm in anim.get_animation_list():
+			var a := anim.get_animation(nm)
+			if a and KENNEY_LOOPS.has(String(nm)) and not AnimLib.WANT.has(String(nm)):
+				a.loop_mode = Animation.LOOP_LINEAR
 		play("idle", 0.0)
 	return true
 
@@ -82,7 +100,7 @@ func _build_blocky(skin: String) -> void:
 
 
 # ---------------------------------------------------------------- özel modeller
-func _build_custom(path: String) -> bool:
+func _build_custom(path: String, flip: bool) -> bool:
 	var doc := GLTFDocument.new()
 	var st := GLTFState.new()
 	if doc.append_from_file(path, st) != OK:
@@ -90,279 +108,346 @@ func _build_custom(path: String) -> bool:
 	var scene: Node = doc.generate_scene(st)
 	if scene == null or not (scene is Node3D):
 		return false
-	if not _make_rig(true):
-		return false
-	# modelin kendi animasyonlarını durdur
-	for ap in scene.find_children("*", "AnimationPlayer", true, false):
-		(ap as AnimationPlayer).stop()
-	var holder := Node3D.new()
-	holder.name = "custom"
-	rig.add_child(holder)
-	holder.add_child(scene)
 	var skels := scene.find_children("*", "Skeleton3D", true, false)
-	var named := _find_named_parts(scene)
-	if skels.size() > 0:
-		mode = "skinned"
-		_fit(holder, scene, skels[0] as Skeleton3D)
-		var d := PartDriver.new()
-		d.setup(skels[0] as Skeleton3D, self)
-		(skels[0] as Skeleton3D).add_child(d)
-		driver = d
-	elif named.size() >= 4:
-		mode = "parts"
-		_fit(holder, scene, null)
-		_attach_named(named)
-	else:
-		mode = "split"
-		_fit(holder, scene, null)
-		_auto_split(holder)
-	_strip_position_tracks()
-	return true
+	var skinned := false
+	for mi in scene.find_children("*", "MeshInstance3D", true, false):
+		if (mi as MeshInstance3D).skin != null or String((mi as MeshInstance3D).skeleton) != "":
+			skinned = true
+	if skels.size() > 0 and skinned:
+		return _build_skinned(scene, skels[0] as Skeleton3D, path, flip)
+	return _build_static(scene, path, flip)
 
 
-func _meshes(n: Node) -> Array:
-	return n.find_children("*", "MeshInstance3D", true, false)
-
-
-func _aabb_in(space: Node3D, n: Node) -> AABB:
-	var inv := space.global_transform.affine_inverse()
-	var box := AABB()
-	var first := true
-	for mi in _meshes(n):
+func _flat_surfaces(scene: Node3D) -> Array:
+	## tüm yüzeyleri sahne kökü uzayına düzleştir: [{pos, nor, uv, idx, mat, name}]
+	var tmp := Node3D.new()
+	add_child(tmp)
+	tmp.add_child(scene)
+	var inv := scene.global_transform.affine_inverse()
+	var out := []
+	for mi in scene.find_children("*", "MeshInstance3D", true, false):
 		var m := mi as MeshInstance3D
 		if m.mesh == null:
 			continue
-		var bb: AABB = m.mesh.get_aabb()
 		var xf: Transform3D = inv * m.global_transform
-		for i in range(8):
-			var p: Vector3 = xf * bb.get_endpoint(i)
-			if first:
-				box = AABB(p, Vector3.ZERO)
-				first = false
-			else:
-				box = box.expand(p)
-	return box
-
-
-func _fit(holder: Node3D, scene: Node3D, sk: Skeleton3D) -> void:
-	## modeli iskelet ölçüsüne (2,7 birim boy) getir, ayakları zemine ve merkeze oturt
-	var box := _aabb_in(rig, scene)
-	var h := box.size.y
-	var bottom := box.position.y
-	if sk:
-		# iskeletli modellerde mesh AABB'si güvenilmez → kemik konumları
-		var lo := INF
-		var hi := -INF
-		for i in sk.get_bone_count():
-			var p: Vector3 = rig.global_transform.affine_inverse() * (sk.global_transform * sk.get_bone_global_rest(i).origin)
-			lo = minf(lo, p.y)
-			hi = maxf(hi, p.y)
-		if hi > lo:
-			h = (hi - lo) * 1.1
-			bottom = lo - (hi - lo) * 0.02
-	if h < 0.0001:
-		return
-	var s := RIG_H / h
-	holder.scale = Vector3.ONE * s
-	var c := box.get_center()
-	holder.position = Vector3(-c.x * s, -bottom * s, -c.z * s)
-
-
-func _find_named_parts(scene: Node) -> Dictionary:
-	var out := {}
-	var keys := {"head": ["head", "kafa"], "torso": ["torso", "body", "chest", "govde", "gövde"],
-		"arm-left": ["arm-left", "arm_left", "armleft", "leftarm", "arm.l", "arm_l", "sol_kol", "solkol"],
-		"arm-right": ["arm-right", "arm_right", "armright", "rightarm", "arm.r", "arm_r", "sag_kol", "sagkol"],
-		"leg-left": ["leg-left", "leg_left", "legleft", "leftleg", "leg.l", "leg_l", "sol_bacak"],
-		"leg-right": ["leg-right", "leg_right", "legright", "rightleg", "leg.r", "leg_r", "sag_bacak"]}
-	for n in scene.find_children("*", "Node3D", true, false):
-		var nm := String(n.name).to_lower()
-		for k in keys.keys():
-			if out.has(k):
+		var nm := String(m.name)
+		var pn := m.get_parent()
+		if pn and String(pn.name) != "" and pn != scene:
+			nm = String(pn.name) + "|" + nm
+		for s in m.mesh.get_surface_count():
+			if m.mesh.surface_get_primitive_type(s) != Mesh.PRIMITIVE_TRIANGLES:
 				continue
-			for pat in keys[k]:
-				if nm == pat or nm.begins_with(pat):
-					out[k] = n
-					break
+			var arr := m.mesh.surface_get_arrays(s)
+			var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+			var nr = arr[Mesh.ARRAY_NORMAL]
+			var uv = arr[Mesh.ARRAY_TEX_UV]
+			var ix = arr[Mesh.ARRAY_INDEX]
+			var pos := PackedVector3Array()
+			pos.resize(v.size())
+			var nor := PackedVector3Array()
+			nor.resize(v.size())
+			for i in v.size():
+				pos[i] = xf * v[i]
+				nor[i] = (xf.basis * (nr[i] if nr != null and nr.size() > i else Vector3.UP)).normalized()
+			var idx: PackedInt32Array
+			if ix != null and (ix as PackedInt32Array).size() > 0:
+				idx = ix
+			else:
+				idx = PackedInt32Array()
+				idx.resize(v.size())
+				for i in v.size():
+					idx[i] = i
+			out.append({"pos": pos, "nor": nor, "uv": uv if uv != null else PackedVector2Array(), "idx": idx, "mat": m.get_active_material(s), "name": nm})
+	tmp.remove_child(scene)
+	tmp.queue_free()
 	return out
 
 
-func _attach_named(named: Dictionary) -> void:
-	for k in named.keys():
-		if not pivots.has(k):
+func _build_static(scene: Node3D, path: String, flip: bool) -> bool:
+	var surfs := _flat_surfaces(scene)
+	scene.queue_free()
+	if surfs.is_empty():
+		return false
+	# boyutlandır: boy RIG_H, ayak y=0, merkez x/z=0, yüz +Z (gerekirse çevir)
+	var lo := Vector3(INF, INF, INF)
+	var hi := Vector3(-INF, -INF, -INF)
+	for s in surfs:
+		for p in s.pos:
+			lo = lo.min(p)
+			hi = hi.max(p)
+	var h := hi.y - lo.y
+	if h < 1e-5:
+		return false
+	var k := RIG_H / h
+	var cx := (lo.x + hi.x) * 0.5
+	var cz := (lo.z + hi.z) * 0.5
+	var geoms := []
+	for s in surfs:
+		var pos: PackedVector3Array = s.pos
+		var nor: PackedVector3Array = s.nor
+		for i in pos.size():
+			var p: Vector3 = (pos[i] - Vector3(cx, lo.y, cz)) * k
+			if flip:
+				p = Vector3(-p.x, p.y, -p.z)
+				nor[i] = Vector3(-nor[i].x, nor[i].y, -nor[i].z)
+			pos[i] = p
+		s.pos = pos
+		s.nor = nor
+		geoms.append({"pos": pos, "idx": s.idx})
+	# önce adlandırılmış parçalar, sonra otomatik ayırma
+	var names := []
+	for s in surfs:
+		names.append(s.name)
+	var named := ModelImport.named_labels(names)
+	var seg: Dictionary
+	var key := path + ("|f" if flip else "")
+	if not named.is_empty():
+		mode = "parts"
+		seg = _named_seg(geoms, named)
+	elif _seg_cache.has(key):
+		seg = _seg_cache[key]
+		mode = "split"
+	else:
+		var mi := ModelImport.new()
+		mi.H = RIG_H
+		seg = mi.segment(geoms)
+		_seg_cache[key] = seg
+		mode = "split"
+	if not _make_rig(true):
+		return false
+	var piv: Dictionary = seg.get("piv", {})
+	if not seg.get("ok", false):
+		note = "Kollar ve bacaklar ayırt edilemedi; model bütün gövdesiyle hareket ediyor."
+	# eklem konumları (rig birimi; Kenney pivot ağacı: root → bacaklar, torso → kollar/kafa)
+	var legY: float = (piv.legR.p.y + 0.02 * RIG_H) if piv.has("legR") else 1.0
+	leg_len = legY
+	var tY: float = piv.waist if piv.get("waist") != null else legY + 0.04 * RIG_H
+	(pivots["torso"] as Node3D).position = Vector3(0, tY, 0)
+	(pivots["head"] as Node3D).position = Vector3(0, RIG_H, 0) - Vector3(0, tY, 0)
+	var frames := {0: Vector3(0, tY, 0), 5: Vector3.ZERO}
+	var attach := {0: pivots["torso"], 5: pivots["root"]}
+	for spec in [["armR", 1, "arm-right"], ["armL", 2, "arm-left"], ["legR", 3, "leg-right"], ["legL", 4, "leg-left"]]:
+		if not piv.has(spec[0]):
 			continue
-		var src: Node3D = named[k]
-		var pv: Node3D = pivots[k]
-		var gx := src.global_transform
-		src.get_parent().remove_child(src)
-		pv.add_child(src)
-		src.global_transform = gx
-
-
-func _auto_split(holder: Node3D) -> void:
-	## iskeletsiz modeli boy oranlarından bacak / gövde / kol / kafa parçalarına böl
-	var inv := rig.global_transform.affine_inverse()
-	var tris := []   # [Vector3 a,b,c (rig uzayı), normal'lar, uv'ler, malzeme]
-	var verts := PackedVector3Array()
-	for mi in _meshes(holder):
-		var m := mi as MeshInstance3D
-		if m.mesh == null:
-			continue
-		var xf: Transform3D = inv * m.global_transform
-		for s in m.mesh.get_surface_count():
-			var arr := m.mesh.surface_get_arrays(s)
-			var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
-			var nrm = arr[Mesh.ARRAY_NORMAL]
-			var uv = arr[Mesh.ARRAY_TEX_UV]
-			var idx = arr[Mesh.ARRAY_INDEX]
-			var mat: Material = m.get_active_material(s)
-			var ids: PackedInt32Array = idx if idx != null and idx.size() > 0 else PackedInt32Array(range(v.size()))
-			for t in range(0, ids.size() - 2, 3):
-				var tri := []
-				for k in range(3):
-					var i: int = ids[t + k]
-					var p: Vector3 = xf * v[i]
-					verts.append(p)
-					var nn: Vector3 = (xf.basis * nrm[i]).normalized() if nrm != null and nrm.size() > i else Vector3.UP
-					var tt: Vector2 = uv[i] if uv != null and uv.size() > i else Vector2.ZERO
-					tri.append([p, nn, tt])
-				tri.append(mat)
-				tris.append(tri)
-	if tris.is_empty():
-		return
-	var lm := _landmarks(verts)
-	var crotch: float = lm.crotch
-	var torso_hw: float = lm.torso_hw
-	var neck: float = lm.neck
-	# pivotları bu modelin oranlarına taşı (animasyonlar yalnızca dönüş kullanır)
-	var k := crotch / 1.0
-	var torso_y := 0.7 * k
-	pivots["leg-left"].position = Vector3(torso_hw * 0.5, crotch, 0)
-	pivots["leg-right"].position = Vector3(-torso_hw * 0.5, crotch, 0)
-	pivots["torso"].position = Vector3(0, torso_y, 0)
-	pivots["arm-left"].position = Vector3(torso_hw, neck - 0.08 - torso_y, 0)
-	pivots["arm-right"].position = Vector3(-torso_hw, neck - 0.08 - torso_y, 0)
-	pivots["head"].position = Vector3(0, neck - torso_y, 0)
-	var groups := {}
-	for tri in tris:
-		var c: Vector3 = (tri[0][0] + tri[1][0] + tri[2][0]) / 3.0
-		var part := "torso"
-		if c.y >= neck and abs(c.x) <= torso_hw * 1.4:
-			part = "head"
-		elif abs(c.x) > torso_hw and c.y > crotch * 0.9 and c.y < neck + 0.1:
-			part = "arm-left" if c.x > 0 else "arm-right"
-		elif c.y < crotch:
-			part = "leg-left" if c.x > 0 else "leg-right"
-		if not groups.has(part):
-			groups[part] = {}
-		var mat: Material = tri[3]
-		if not groups[part].has(mat):
-			groups[part][mat] = []
-		groups[part][mat].append(tri)
-	for part in groups.keys():
-		var pv: Node3D = pivots[part]
-		var origin: Vector3 = pv.global_position
-		origin = inv * origin
-		var am := ArrayMesh.new()
-		for mat in groups[part].keys():
+		var pw: Vector3 = piv[spec[0]].p
+		var pv: Node3D = pivots[spec[2]]
+		var parent_world: Vector3 = Vector3(0, tY, 0) if spec[1] <= 2 else Vector3.ZERO
+		pv.position = pw - parent_world
+		frames[spec[1]] = pw
+		var holder: Node3D = pv
+		# T-pozdaki kolu aşağı indir (animasyonlar sarkan kola göre)
+		if spec[1] <= 2 and piv[spec[0]].has("h"):
+			var dir: Vector3 = piv[spec[0]].h - pw
+			if dir.length() > 0.05 and atan2(abs(dir.x), maxf(0.01, -dir.y)) > 0.6:
+				var fix := Node3D.new()
+				fix.basis = Basis(AnimLib._arc(dir, Vector3.DOWN))
+				pv.add_child(fix)
+				holder = fix
+		attach[spec[1]] = holder
+	var tl: Array = seg.get("tl", [])
+	for gi in surfs.size():
+		var s: Dictionary = surfs[gi]
+		var labels: PackedByteArray = tl[gi] if gi < tl.size() else PackedByteArray()
+		var by := {}
+		var ix: PackedInt32Array = s.idx
+		for t in ix.size() / 3:
+			var L: int = labels[t] if t < labels.size() else 0
+			if not attach.has(L):
+				L = 0
+			if not by.has(L):
+				by[L] = []
+			by[L].append(t)
+		for L in by.keys():
 			var st := SurfaceTool.new()
 			st.begin(Mesh.PRIMITIVE_TRIANGLES)
-			for tri in groups[part][mat]:
-				for kk in range(3):
-					st.set_normal(tri[kk][1])
-					st.set_uv(tri[kk][2])
-					st.add_vertex(tri[kk][0] - origin)
-			if mat:
-				st.set_material(mat)
-			st.commit(am)
-		var out := MeshInstance3D.new()
-		out.mesh = am
-		pv.add_child(out)
-	holder.queue_free()
+			var origin: Vector3 = frames.get(L, frames[0])
+			var uv: PackedVector2Array = s.uv
+			for t in by[L]:
+				for e in 3:
+					var vi: int = ix[t * 3 + e]
+					st.set_normal(s.nor[vi])
+					if uv.size() > vi:
+						st.set_uv(uv[vi])
+					st.add_vertex(s.pos[vi] - origin)
+			if s.mat:
+				st.set_material(s.mat)
+			var am := st.commit()
+			var out := MeshInstance3D.new()
+			out.mesh = am
+			(attach[L] as Node3D).add_child(out)
+	_adapt_tracks()
+	return true
 
 
-func _landmarks(verts: PackedVector3Array) -> Dictionary:
-	var H := RIG_H
-	# kasık: alttan yukarı, ortada (|x| küçük) nokta bulunmayan en yüksek dilim
-	var crotch := 0.45 * H
-	var step := 0.02 * H
-	var y := 0.08 * H
-	var last_gap := -1.0
-	while y < 0.62 * H:
-		var hit := false
-		for p in verts:
-			if p.y >= y and p.y < y + step and abs(p.x) < 0.025 * H:
-				hit = true
-				break
-		if not hit:
-			last_gap = y + step
-		elif last_gap > 0.0:
-			break
-		y += step
-	if last_gap > 0.15 * H:
-		crotch = last_gap
-	# gövde yarı genişliği: kasık-boyun bandında |x| histogramındaki ilk boşluk
-	var bins := PackedInt32Array()
-	bins.resize(60)
-	for p in verts:
-		if p.y > crotch + 0.05 * H and p.y < 0.8 * H:
-			var b := int(abs(p.x) / (0.01 * H))
-			if b < 60:
-				bins[b] += 1
-	var torso_hw := 0.17 * H
-	var seen := false
-	for b in range(60):
-		if bins[b] > 0:
-			seen = true
-		elif seen and b > 5:
-			torso_hw = b * 0.01 * H
-			break
-	# boyun: gövde genişliği içindeki en dar dilim (0,62H–0,92H)
-	var neck := 0.8 * H
-	var best := INF
-	var widest := 0.0
-	y = 0.62 * H
-	while y < 0.92 * H:
-		var w := 0.0
-		for p in verts:
-			if p.y >= y and p.y < y + step and abs(p.x) <= torso_hw * 1.05:
-				w = maxf(w, abs(p.x))
-		if w > 0.0 and w < best:
-			best = w
-			neck = y + step * 0.5
-		widest = maxf(widest, w)
-		y += step
-	if widest > 0.0 and best > widest * 0.9:
-		neck = 0.74 * H
-	return {"crotch": crotch, "torso_hw": torso_hw, "neck": neck}
+func _named_seg(geoms: Array, labels: Array) -> Dictionary:
+	## Element Arenası namedSeg: parça adlarından etiket + eklem noktaları
+	var tl := []
+	var V := {}
+	for gi in geoms.size():
+		var L: int = labels[gi]
+		var nt: int = (geoms[gi].idx as PackedInt32Array).size() / 3
+		var b := PackedByteArray()
+		b.resize(nt)
+		b.fill(L)
+		tl.append(b)
+		if not V.has(L):
+			V[L] = []
+		V[L].append(geoms[gi].pos)
+	var piv := {}
+	var ext := func(L) -> Vector2:
+		var mn := 1e9
+		var mx := -1e9
+		for p in V.get(L, []):
+			for v in p:
+				mn = minf(mn, v.y)
+				mx = maxf(mx, v.y)
+		return Vector2(mn, mx)
+	var band := func(L, lo: float, hi: float):
+		var s := Vector3.ZERO
+		var k := 0
+		for p in V.get(L, []):
+			for v in p:
+				if v.y >= lo and v.y <= hi:
+					s += v
+					k += 1
+		return s / k if k > 0 else null
+	var leg_top := -1e9
+	for spec in [[1, "armR"], [2, "armL"]]:
+		if not V.has(spec[0]):
+			continue
+		var e: Vector2 = ext.call(spec[0])
+		var top = band.call(spec[0], e.y - 0.06 * RIG_H, e.y)
+		var hc = band.call(spec[0], e.x, e.x + 0.07 * RIG_H)
+		if top != null:
+			piv[spec[1]] = {"p": Vector3(top.x, e.y - 0.035 * RIG_H, top.z), "h": hc if hc != null else top}
+	for spec in [[3, "legR"], [4, "legL"]]:
+		if not V.has(spec[0]):
+			continue
+		var e: Vector2 = ext.call(spec[0])
+		var top = band.call(spec[0], e.y - 0.05 * RIG_H, e.y)
+		if top != null:
+			leg_top = maxf(leg_top, e.y)
+			piv[spec[1]] = {"p": Vector3(top.x, e.y - 0.02 * RIG_H, top.z)}
+	piv["waist"] = leg_top + 0.03 * RIG_H if leg_top > -1e9 else null
+	return {"ok": true, "tl": tl, "piv": piv}
 
 
-func _strip_position_tracks() -> void:
-	## özel modellerde pivot konumları değiştiği için yalnızca kök konum izini bırak
+func _adapt_tracks() -> void:
+	## özel modelin bacak boyuna göre kök yüksekliği izini ölçekle, diğer konum izlerini kaldır
 	if anim == null:
 		return
+	var s := leg_len / 1.0
 	for ln in anim.get_animation_library_list():
 		var lib := anim.get_animation_library(ln).duplicate(true) as AnimationLibrary
 		for an in lib.get_animation_list():
 			var a := lib.get_animation(an)
 			for t in range(a.get_track_count() - 1, -1, -1):
-				var path := String(a.track_get_path(t))
-				if a.track_get_type(t) == Animation.TYPE_POSITION_3D and not path.ends_with("root"):
+				if a.track_get_type(t) != Animation.TYPE_POSITION_3D:
+					continue
+				var p := String(a.track_get_path(t))
+				if not p.get_slice(":", 0).ends_with("root"):
 					a.remove_track(t)
+					continue
+				for k in a.track_get_key_count(t):
+					a.track_set_key_value(t, k, (a.track_get_key_value(t, k) as Vector3) * s)
 		anim.remove_animation_library(ln)
 		anim.add_animation_library(ln, lib)
 
 
+func _build_skinned(scene: Node3D, sk: Skeleton3D, path: String, flip: bool) -> bool:
+	mode = "skinned"
+	var holder := Node3D.new()
+	holder.name = "custom"
+	add_child(holder)
+	holder.add_child(scene)
+	# boyutlandır (kemik konumlarına göre)
+	var lo := INF
+	var hi := -INF
+	var inv := holder.global_transform.affine_inverse()
+	var cx := 0.0
+	var cz := 0.0
+	for i in sk.get_bone_count():
+		var p: Vector3 = inv * (sk.global_transform * sk.get_bone_global_rest(i).origin)
+		lo = minf(lo, p.y)
+		hi = maxf(hi, p.y)
+		cx += p.x
+		cz += p.z
+	cx /= maxf(1, sk.get_bone_count())
+	cz /= maxf(1, sk.get_bone_count())
+	var h := (hi - lo) * 1.08
+	if h < 1e-5:
+		return false
+	var k := RIG_H * SCALE / h
+	holder.scale = Vector3.ONE * k
+	holder.position = Vector3(-cx * k, -(lo - (hi - lo) * 0.02) * k, -cz * k)
+	if flip:
+		holder.rotation.y = PI
+		holder.position = Vector3(cx * k, holder.position.y, cz * k)
+	var aps := scene.find_children("*", "AnimationPlayer", true, false)
+	anim = aps[0] as AnimationPlayer if aps.size() > 0 else null
+	var own_names := []
+	if anim:
+		anim.stop()
+		own_names = anim.get_animation_list()
+	else:
+		anim = AnimationPlayer.new()
+		scene.add_child(anim)
+		anim.root_node = anim.get_path_to(scene)
+	var mapped := AnimLib.bake_skinned(get_tree(), path, scene, sk, anim)
+	if mapped >= 8:
+		prefix = "ual/"
+		note = "İskeletli model: %d kemik eşlendi, oyunun tüm animasyonları aktarıldı." % mapped
+	elif own_names.size() > 0:
+		mode = "own"
+		# Element Arenası gibi: modelin kendi animasyonlarını adlarına göre eşle
+		var pick := func(re_s: String) -> String:
+			var re := RegEx.new()
+			re.compile("(?i)" + re_s)
+			for nm in own_names:
+				if re.search(String(nm)):
+					return nm
+			return ""
+		own = {"idle": pick.call("idle|stand|breath|wait"), "walk": pick.call("walk"), "jog": pick.call("run|jog"), "sprint": pick.call("run|sprint|jog"),
+			"attack": pick.call("attack|punch|slash|kick|strike|combat|fight|hit")}
+		if own.idle == "":
+			own.idle = own_names[0]
+		for nm in own_names:
+			var a := anim.get_animation(nm)
+			if a:
+				a.loop_mode = Animation.LOOP_LINEAR
+		note = "İskeletli model: kendi animasyonları kullanılıyor (%d adet)." % own_names.size()
+	else:
+		note = "İskeleti tanınamadı ve animasyonu yok; model sabit duruyor."
+	play("idle", 0.0)
+	return true
+
+
 # ---------------------------------------------------------------- animasyon
-func play(name: String, blend := 0.2, speed := 1.0) -> void:
+func _resolve(name: String) -> String:
 	if anim == null:
+		return ""
+	if mode == "own":
+		var m: String = own.get(name, "")
+		if m == "" and (name.begins_with("punch") or name.begins_with("sword") or name.contains("kick")):
+			m = own.get("attack", "")
+		if m == "":
+			m = own.get("walk", "") if name.contains("walk") or name == "jog" else own.get("idle", "")
+		return m
+	if anim.has_animation(prefix + name):
+		return prefix + name
+	var fb: String = FALLBACK.get(name, "")
+	if fb != "" and anim.has_animation(prefix + fb):
+		return prefix + fb
+	if anim.has_animation(prefix + "idle"):
+		return prefix + "idle"
+	return ""
+
+
+func play(name: String, blend := 0.2, speed := 1.0) -> void:
+	var target := _resolve(name)
+	if target == "":
 		cur = name
 		return
-	var target := name
-	if not anim.has_animation(target):
-		target = "idle"
-		if not anim.has_animation(target):
-			return
 	if target != cur:
 		anim.play(target, blend)
 		cur = target
@@ -374,15 +459,32 @@ func play_once(name: String, blend := 0.1, speed := 1.0) -> void:
 	play(name, blend, speed)
 
 
+func has_anim(name: String) -> bool:
+	return anim != null and anim.has_animation(prefix + name)
+
+
+func anim_length(name: String) -> float:
+	var t := _resolve(name)
+	return anim.get_animation(t).length if t != "" else 0.5
+
+
 func set_motion(speed: float, on_ground := true) -> void:
+	var k := 1.0 if mode == "skinned" else 0.75
 	if not on_ground:
-		play("walk", 0.2, 0.4)
+		play("jump", 0.2)
+	elif crouch:
+		if speed < 0.25:
+			play("crouch_idle", 0.25)
+		else:
+			play("crouch_walk", 0.2, clampf(speed / (NOMINAL.crouch_walk * k), 0.6, 2.0))
 	elif speed < 0.3:
-		play("idle", 0.25)
-	elif speed < 3.6:
-		play("walk", 0.2, clamp(speed / 1.5, 0.7, 2.0))
+		play("idle", 0.3)
+	elif speed < 2.2:
+		play("walk", 0.25, clampf(speed / (NOMINAL.walk * k), 0.6, 2.2))
+	elif speed < 5.4:
+		play("jog", 0.25, clampf(speed / (NOMINAL.jog * k), 0.7, 1.8))
 	else:
-		play("sprint", 0.2, clamp(speed / 5.0, 0.8, 1.6))
+		play("sprint", 0.25, clampf(speed / (NOMINAL.sprint * k), 0.8, 1.7))
 
 
 # ---------------------------------------------------------------- model yoksa yedek

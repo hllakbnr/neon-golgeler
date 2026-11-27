@@ -12,6 +12,9 @@ var _down := 0.0          # yerde kalma süresi
 var _flee := 0.0
 var _flee_dir := Vector3.ZERO
 var _vel := Vector3.ZERO  # savrulma hızı
+var _lod_t := 0.0
+var _far := false         # kameradan uzaksa görünmez, animasyonu durur (FPS)
+var _cars: Array = []
 
 
 func _ready() -> void:
@@ -20,6 +23,7 @@ func _ready() -> void:
 	add_child(visual)
 	visual.setup(slot, Game.slot_default_skin(slot))
 	speed = randf_range(1.1, 1.6)
+	_lod_t = randf() * 0.5
 
 
 func _physics_process(delta: float) -> void:
@@ -36,8 +40,29 @@ func _physics_process(delta: float) -> void:
 			global_position.y = 0.18
 			visual.play("idle", 0.4)
 		return
-	var cars := get_tree().get_nodes_in_group("cars") + get_tree().get_nodes_in_group("traffic")
-	for c in cars:
+	_lod_t -= delta
+	if _lod_t <= 0.0:
+		_lod_t = 0.5
+		var cam := get_viewport().get_camera_3d()
+		var far := cam != null and cam.global_position.distance_squared_to(global_position) > 120.0 * 120.0
+		if far != _far:
+			_far = far
+			visual.visible = not far
+			if visual.anim:
+				visual.anim.active = not far
+		_cars = get_tree().get_nodes_in_group("cars") + get_tree().get_nodes_in_group("traffic") if not far else []
+	if _far:
+		var tgt: Vector3 = path[idx]
+		var tv := tgt - global_position
+		tv.y = 0.0
+		if tv.length() < 0.6:
+			idx = (idx + 1) % path.size()
+		else:
+			global_position += tv.normalized() * speed * delta
+		return
+	for c in _cars:
+		if not is_instance_valid(c):
+			continue
 		var cn := c as Node3D
 		var rel := global_position - cn.global_position
 		rel.y = 0.0

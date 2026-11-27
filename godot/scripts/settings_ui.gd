@@ -150,7 +150,8 @@ func _opts() -> Array:
 				["Küresel Aydınlatma (SDFGI)", "Işığın yüzeylerden sekmesi. Daha gerçekçi ama daha ağır.", "sdfgi", "bool", []],
 				["Yansımalar (SSR)", "Islak zemin ve camlarda ekran-uzayı yansımaları.", "ssr", "bool", []],
 				["Çözünürlük Ölçeği", "3B sahnenin çizim çözünürlüğü. Düşük değer FPS'i artırır.", "render_scale", ["%50", "%67", "%77", "%100"], [0.5, 0.67, 0.77, 1.0]],
-				["Tam Ekran", "Pencereli veya tam ekran. Oyun içinde F11 ile de değiştirilebilir.", "fullscreen", "bool", []]]
+				["Tam Ekran", "Pencereli veya tam ekran. Oyun içinde F11 ile de değiştirilebilir.", "fullscreen", "bool", []],
+				["Otomatik Güncelleme", "Oyun açılırken yeni sürüm varsa indirip kurar ve oyunu yeniden başlatır.", "auto_update", "bool", []]]
 		2:
 			return [["Görüş Alanı (FOV)", "Kamera açısı.", "fov", ["60", "65", "70", "75", "80", "90"], [60.0, 65.0, 70.0, 75.0, 80.0, 90.0]],
 				["Fare Hassasiyeti", "Kamera dönüş hızı.", "sens", ["0.5", "0.75", "1.0", "1.25", "1.5", "2.0"], [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]],
@@ -160,7 +161,7 @@ func _opts() -> Array:
 				["Diyalog Sesi", "Karakterlerin konuşma sesi.", "voice_volume", ["Kapalı", "%25", "%50", "%75", "%100"], [0.0, 0.25, 0.5, 0.75, 1.0]],
 				["Altyazılar", "Konuşmaların yazısı ekranın altında görünür.", "subtitles", "bool", []]]
 		_:
-			return [["Klavye / Fare", "WASD hareket · Shift koş · Boşluk zıpla · F araca bin/in · Boşluk el freni · T zamanı hızlandır · F11 tam ekran · Esc menü", "", "info", []],
+			return [["Klavye / Fare", "WASD hareket · Shift koş · C eğil · Boşluk zıpla · F araca bin/in · Boşluk el freni · T zamanı hızlandır · F11 tam ekran · Esc menü", "", "info", []],
 				["Gamepad", "Sol çubuk hareket · Sağ çubuk kamera · Ⓐ zıpla · Ⓨ araç · RT/LT gaz/fren · Start menü", "", "info", []]]
 
 
@@ -203,11 +204,28 @@ func _row(o: Array) -> Control:
 	var val := Game.styled_label("", 22, Color.WHITE)
 	val.anchor_left = 1.0
 	val.anchor_right = 1.0
-	val.offset_left = -330
-	val.offset_right = -20
+	val.offset_left = -380
+	val.offset_right = -96
 	val.offset_top = 14
 	val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	val.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.add_child(val)
+	var arrows := []
+	if not (o[3] is String and o[3] == "info"):
+		for spec in [["‹", -88, -1], ["›", -48, 1]]:
+			var ab := Button.new()
+			ab.text = spec[0]
+			ab.flat = true
+			ab.focus_mode = Control.FOCUS_NONE
+			ab.add_theme_font_size_override("font_size", 30)
+			ab.anchor_left = 1.0
+			ab.anchor_right = 1.0
+			ab.offset_left = spec[1]
+			ab.offset_right = spec[1] + 36
+			ab.offset_top = 6
+			ab.offset_bottom = 52
+			b.add_child(ab)
+			arrows.append([ab, spec[2]])
 	var key: String = o[2]
 	var refresh := func():
 		var dark := b.has_focus()
@@ -221,7 +239,7 @@ func _row(o: Array) -> Control:
 			for k in vals.size():
 				if is_equal_approx(float(vals[k]), float(cur)):
 					idx = k
-			val.text = "%s   %d / %d   ‹  ›" % [o[3][idx], idx + 1, vals.size()]
+			val.text = "%s   %d / %d" % [o[3][idx], idx + 1, vals.size()]
 		else:
 			val.text = ""
 	var change := func(dir: int):
@@ -240,15 +258,29 @@ func _row(o: Array) -> Control:
 		Game.save_settings()
 		Game.apply_settings()
 		refresh.call()
+	for ar in arrows:
+		var dir: int = ar[1]
+		(ar[0] as Button).pressed.connect(func(): b.grab_focus(); change.call(dir))
+		(ar[0] as Button).add_theme_color_override("font_color", Color.WHITE)
+		(ar[0] as Button).add_theme_color_override("font_hover_color", Color(1, 0.5, 0.85))
 	b.focus_entered.connect(func(): d_title.text = o[0].to_upper(); d_text.text = o[1]; refresh.call())
 	b.focus_exited.connect(func(): refresh.call())
 	b.mouse_entered.connect(func(): b.grab_focus())
 	b.pressed.connect(func(): change.call(1))
 	var on_input := func(e: InputEvent):
-		if e.is_action_pressed("ui_left"):
+		var left: bool = e.is_action_pressed("ui_left") or (e is InputEventKey and e.pressed and e.physical_keycode == KEY_A)
+		var right: bool = e.is_action_pressed("ui_right") or (e is InputEventKey and e.pressed and e.physical_keycode == KEY_D)
+		if e is InputEventMouseButton and e.pressed:
+			if e.button_index == MOUSE_BUTTON_WHEEL_UP:
+				right = true
+			elif e.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				left = true
+			elif e.button_index == MOUSE_BUTTON_RIGHT:
+				left = true
+		if left:
 			change.call(-1)
 			b.accept_event()
-		elif e.is_action_pressed("ui_right"):
+		elif right:
 			change.call(1)
 			b.accept_event()
 	b.gui_input.connect(on_input)

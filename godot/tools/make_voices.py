@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Diyalog satırlarını Türkçe metin-okuma ile seslendirir (CI'da derlemeden önce).
-Piper (MIT, açık kaynak) + rhasspy/piper-voices Türkçe ses modeli.
+Önce XTTS v2 (Coqui, çok dilli, doğal insan sesi; kadın/erkek hazır konuşmacılar) denenir;
+kurulamazsa Piper (MIT) + rhasspy/piper-voices Türkçe modeline düşülür.
+Not: XTTS v2 modeli Coqui Public Model License ile gelir (ticari olmayan kullanım).
 Ela için ses perdesi yükseltilir, Kaan için hafif kalınlaştırılır. Çıktı: assets/voice/<id>.ogg
 """
 import json, os, subprocess, sys, urllib.request
@@ -13,6 +15,31 @@ HF = 'https://huggingface.co/rhasspy/piper-voices/resolve/main/tr/tr_TR/'
 VOICES = {'dfki': 'dfki/medium/tr_TR-dfki-medium', 'fahrettin': 'fahrettin/medium/tr_TR-fahrettin-medium', 'fettah': 'fettah/medium/tr_TR-fettah-medium'}
 # karakter → (ses modeli, perde çarpanı)
 CAST = {'kaan': ('fahrettin', 0.97), 'ela': ('dfki', 1.24), 'polis': ('fettah', 1.0)}
+# XTTS hazır konuşmacıları: Kaan genç erkek, Ela genç kadın, polis tok erkek sesi
+XCAST = {'kaan': 'Damien Black', 'ela': 'Ana Florence', 'polis': 'Viktor Menelaos'}
+
+
+def xtts_all(lines):
+    """XTTS ile bütün satırları wav'a çevirir; başaranların id'lerini döndürür."""
+    done = {}
+    try:
+        os.environ.setdefault('COQUI_TOS_AGREED', '1')
+        from TTS.api import TTS
+        tts = TTS('tts_models/multilingual/multi-dataset/xtts_v2').to('cpu')
+    except Exception as e:
+        print('XTTS kullanılamadı:', repr(e)[:400])
+        return done
+    for l in lines:
+        who = l.get('who', 'kaan')
+        wav = os.path.join('/tmp', 'x_' + l['id'] + '.wav')
+        try:
+            tts.tts_to_file(text=l['text'], speaker=XCAST.get(who, 'Damien Black'), language='tr', file_path=wav)
+            if os.path.getsize(wav) > 1000:
+                done[l['id']] = wav
+                print('  ✓ XTTS', l['id'], who)
+        except Exception as e:
+            print('  ✗ XTTS', l['id'], repr(e)[:300])
+    return done
 
 
 def dl(name):
@@ -53,18 +80,23 @@ def main():
         data = json.load(f)
     os.makedirs(OUT, exist_ok=True)
     n = 0
-    for scene, lines in data.items():
-        for l in lines:
+    all_lines = [l for lines in data.values() for l in lines]
+    xt = xtts_all(all_lines) if os.environ.get('NG_TTS', 'xtts') == 'xtts' else {}
+    for l in all_lines:
             who = l.get('who', 'kaan')
             name, pitch = CAST.get(who, ('dfki', 1.0))
-            model = dl(name) or dl('dfki')
-            if not model:
-                continue
-            wav = os.path.join('/tmp', l['id'] + '.wav')
-            if not synth(model, l['text'], wav):
-                print('  ✗', l['id'])
-                continue
-            af = 'loudnorm=I=-16:TP=-1.5'
+            if l['id'] in xt:
+                wav = xt[l['id']]
+                pitch = 1.0
+            else:
+                model = dl(name) or dl('dfki')
+                if not model:
+                    continue
+                wav = os.path.join('/tmp', l['id'] + '.wav')
+                if not synth(model, l['text'], wav):
+                    print('  ✗', l['id'])
+                    continue
+            af = 'silenceremove=start_periods=1:start_threshold=-50dB,loudnorm=I=-16:TP=-1.5'
             if abs(pitch - 1.0) > 0.01:
                 af = 'asetrate=22050*%.3f,aresample=22050,atempo=%.3f,%s' % (pitch, 1.0 / pitch, af)
             out = os.path.join(OUT, l['id'] + '.ogg')

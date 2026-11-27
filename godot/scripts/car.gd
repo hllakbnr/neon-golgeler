@@ -27,7 +27,7 @@ func _ready() -> void:
 	var info := CarModel.build(self, model, body_color)
 	size = info.size
 	var c: Vector3 = info.center
-	center_of_mass = Vector3(0, c.y - size.y * 0.32, c.z)
+	center_of_mass = Vector3(0, 0.18, c.z)
 	var shape := CollisionShape3D.new()
 	var bs := BoxShape3D.new()
 	bs.size = Vector3(size.x * 0.94, size.y * 0.62, size.z * 0.97)
@@ -35,7 +35,7 @@ func _ready() -> void:
 	shape.position = Vector3(c.x, c.y + size.y * 0.12, c.z)
 	add_child(shape)
 	seat = Vector3(size.x * 0.2, c.y - size.y * 0.44, c.z - size.z * 0.06)
-	lights = CarModel.add_lights(self, info)
+	lights = CarModel.add_lights(self, info, true)
 	for w in info.wheels:
 		var wpos: Vector3 = w[0]
 		var front: bool = wpos.z > c.z
@@ -46,12 +46,12 @@ func _ready() -> void:
 		vw.wheel_radius = w[1]
 		vw.wheel_rest_length = 0.14
 		vw.suspension_travel = 0.16
-		vw.suspension_stiffness = 62.0
+		vw.suspension_stiffness = 85.0
 		vw.suspension_max_force = 9000.0
-		vw.damping_compression = 4.6
-		vw.damping_relaxation = 5.4
-		vw.wheel_friction_slip = 3.3 if front else 3.1
-		vw.wheel_roll_influence = 0.06
+		vw.damping_compression = 6.0
+		vw.damping_relaxation = 7.5
+		vw.wheel_friction_slip = 2.9 if front else 2.7
+		vw.wheel_roll_influence = 0.02
 		add_child(vw)
 		wheels.append(vw)
 		var mesh: Node3D = w[2]
@@ -81,8 +81,6 @@ func _physics_process(delta: float) -> void:
 	var lights_on: bool = Game.night > 0.4 and (driven or linear_velocity.length() > 0.5)
 	for l in lights.get("spots", []):
 		l.visible = lights_on
-	if lights.has("head"):
-		lights.head.emission_energy_multiplier = 3.0 if lights_on else 0.0
 	_stabilize(delta)
 	if not driven:
 		return
@@ -114,28 +112,29 @@ func _physics_process(delta: float) -> void:
 	var hand := Input.is_action_pressed("handbrake") and not Game.paused
 	for w in wheels:
 		if not w.use_as_steering:
-			w.wheel_friction_slip = 1.5 if hand else 3.1
+			w.wheel_friction_slip = 1.3 if hand else 2.7
 			w.brake = max_brake * 0.8 if hand else brake
 	if lights.has("brake"):
 		lights.brake.emission_energy_multiplier = 5.0 if (brk > 0.1 and v > 0.5) or hand else (1.2 if lights_on else 0.4)
 
 
 func _stabilize(delta: float) -> void:
-	## GTA4 tarzı: gövde yatar ama sönümlenir, sallanmaz; yüksek hızda yere basma kuvveti
+	## GTA4 hissi: gövde hafif yatar ama devrilmez; yalpa ve baş vurma sönümlenir
 	var b := global_transform.basis
 	var av := b.inverse() * angular_velocity
-	# yalpa (z) ve baş vurma (x) hızlarını sönümle
-	var damp := Vector3(av.x * 2.2, 0.0, av.z * 3.2) * mass
+	var damp := Vector3(av.x * 5.0, 0.0, av.z * 7.0) * mass
 	apply_torque(-(b * damp))
-	# yalpa önleyici: gövdeyi dik tutmaya çalışan yay
 	var up := b.y
 	var tilt := up.cross(Vector3.UP)
-	if up.dot(Vector3.UP) > 0.3:
-		apply_torque(tilt * mass * 9.0)
+	if up.dot(Vector3.UP) > 0.2:
+		apply_torque(tilt * mass * 48.0)
+	elif up.dot(Vector3.UP) < 0.2 and linear_velocity.length() < 2.0:
+		# ters döndüyse yavaşça doğrult
+		apply_torque(tilt.normalized() * mass * 25.0)
 	var spd := linear_velocity.length()
-	apply_central_force(-b.y * spd * spd * 1.1)
-	# hava direnci
+	apply_central_force(-b.y * spd * spd * 1.4)
 	apply_central_force(-linear_velocity * spd * 0.35)
+	var _d := delta
 
 
 func speed_kmh() -> float:

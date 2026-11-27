@@ -24,6 +24,9 @@ var car: Car = null
 var world: World
 var controls := true
 var _shake := 0.0
+var _safe := Vector3.ZERO        # son güvenli kara noktası (denize düşünce geri dönülür)
+var _safe_car := Transform3D()
+var _safe_t := 0.0
 
 
 func _ready() -> void:
@@ -46,12 +49,13 @@ func _ready() -> void:
 	pitch_node = Node3D.new()
 	arm = SpringArm3D.new()
 	arm.spring_length = 3.1
-	arm.margin = 0.25
+	arm.margin = 0.35
 	var sphere := SphereShape3D.new()
-	sphere.radius = 0.2
+	sphere.radius = 0.3
 	arm.shape = sphere
 	arm.add_excluded_object(get_rid())
 	cam = Camera3D.new()
+	cam.near = 0.12
 	cam.fov = Game.settings.fov
 	cam.far = 1500.0
 	cam.h_offset = 0.55
@@ -84,7 +88,13 @@ func _physics_process(delta: float) -> void:
 		yaw -= rx * 2.6 * delta * Game.settings.sens
 	if abs(ry) > 0.15:
 		pitch = clamp(pitch - ry * 2.0 * delta * Game.settings.sens, -1.1, 0.6)
+	_safe_t -= delta
 	if car:
+		if car.global_position.y < World.SEA - 1.0:
+			_rescue_car()
+		elif _safe_t <= 0.0 and car.global_position.y > World.SEA + 0.6 and car.global_transform.basis.y.y > 0.85:
+			_safe_t = 1.0
+			_safe_car = car.global_transform
 		global_position = car.global_position + Vector3(0, 0.5, 0)
 		velocity = Vector3.ZERO
 		var spd_k: float = clamp(car.linear_velocity.length() / 40.0, 0.0, 1.0)
@@ -100,8 +110,13 @@ func _physics_process(delta: float) -> void:
 	var dir := (basis * Vector3(input.x, 0, input.y))
 	var mode: int = Game.settings.move_speed
 	var top: float = [WALK, FAST_WALK, JOG][mode]
+	if controls and Input.is_action_just_pressed("crouch") and is_on_floor():
+		visual.crouch = not visual.crouch
+	if visual.crouch:
+		top = 1.6
 	if controls and Input.is_action_pressed("sprint"):
 		top = SPRINT
+		visual.crouch = false
 	var want: Vector3 = dir * top * minf(1.0, input.length())
 	var acc := 14.0 if is_on_floor() else 4.0
 	velocity.x = move_toward(velocity.x, want.x, acc * delta * max(top, 4.0))
@@ -111,6 +126,12 @@ func _physics_process(delta: float) -> void:
 	elif controls and Input.is_action_just_pressed("jump"):
 		velocity.y = JUMP
 	move_and_slide()
+	if global_position.y < World.SEA - 1.4 and _safe != Vector3.ZERO:
+		global_position = _safe + Vector3(0, 0.3, 0)
+		velocity = Vector3.ZERO
+	elif _safe_t <= 0.0 and is_on_floor() and global_position.y > World.SEA + 0.4:
+		_safe_t = 1.0
+		_safe = global_position
 	var hs := Vector2(velocity.x, velocity.z).length()
 	if hs > 0.2:
 		var target := atan2(velocity.x, velocity.z)
@@ -157,12 +178,14 @@ func _try_enter() -> void:
 		for c in get_children():
 			if c is CollisionShape3D:
 				c.disabled = true
-		# sürücü koltuğuna otur
+		# sürücü koltuğuna otur (camlar opak → görünmez, kol/baş dışarı taşmaz)
+		add_collision_exception_with(car)
 		remove_child(visual)
 		car.add_child(visual)
 		visual.position = car.seat
 		visual.rotation = Vector3.ZERO
 		visual.scale = Vector3.ONE * 0.72
+		visual.visible = false
 		visual.play("drive", 0.15)
 		car.set_driver(true)
 		entered_vehicle.emit(car)
@@ -171,20 +194,34 @@ func _try_enter() -> void:
 func exit_car() -> void:
 	if car == null:
 		return
-	var side := car.global_transform.basis.x * -1.8
-	global_position = car.global_position + side + Vector3(0, 0.3, 0)
-	car.set_driver(false)
-	car.remove_child(visual)
+	var c0 := car
+	var side := c0.global_transform.basis.x * (c0.size.x * 0.5 + 0.9)
+	global_position = c0.global_position + side + Vector3(0, 0.4, 0)
+	c0.set_driver(false)
+	c0.remove_child(visual)
 	add_child(visual)
 	visual.position = Vector3.ZERO
 	visual.scale = Vector3.ONE
-	visual.rotation.y = car.global_rotation.y
+	visual.visible = true
+	visual.rotation.y = c0.global_rotation.y
 	car = null
+	# önce konum otursun, sonra çarpışma açılsın; araçla çarpışma bir süre kapalı kalır
+	await get_tree().physics_frame
 	for c in get_children():
 		if c is CollisionShape3D:
 			c.disabled = false
+	get_tree().create_timer(1.2).timeout.connect(func(): if is_instance_valid(c0): remove_collision_exception_with(c0))
 	velocity = Vector3.ZERO
 	exited_vehicle.emit()
+
+
+func _rescue_car() -> void:
+	if _safe_car == Transform3D():
+		return
+	var b := Basis(Vector3.UP, _safe_car.basis.get_euler().y)
+	car.global_transform = Transform3D(b, _safe_car.origin + Vector3(0, 0.6, 0))
+	car.linear_velocity = Vector3.ZERO
+	car.angular_velocity = Vector3.ZERO
 
 
 func shake(t := 0.3) -> void:
