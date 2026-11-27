@@ -1,77 +1,68 @@
 extends RefCounted
 class_name CarModel
-## Prosedürel otomobil gövdesi (yuvarlatılmış hatlar, cam, jant, far) — model inmezse yedek.
+## Araç görselleri: Kenney Car Kit (CC0) oyuncak tarzı modeller; inmezse prosedürel yedek.
+## build() → {"ok": bool, "size": Vector3 (gövde boyutu), "wheels": [[konum, yarıçap, mesh düğümü]]}
 
-static func build(parent: Node3D, color: Color) -> void:
-	var paint := StandardMaterial3D.new()
-	paint.albedo_color = color
-	paint.metallic = 0.65
-	paint.roughness = 0.28
-	paint.clearcoat_enabled = true
-	paint.clearcoat = 1.0
-	paint.clearcoat_roughness = 0.04
-	var glass := StandardMaterial3D.new()
-	glass.albedo_color = Color(0.05, 0.07, 0.09, 0.85)
-	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	glass.metallic = 0.2
-	glass.roughness = 0.02
-	var trim := Game.paint(Color(0.05, 0.05, 0.06), 0.3, 0.5)
-	var chrome := Game.paint(Color(0.9, 0.9, 0.92), 1.0, 0.12)
-	_capsule(parent, Vector3(0, 0.72, 0), Vector3(1.86, 0.55, 4.4), paint)          # alt gövde
-	_capsule(parent, Vector3(0, 1.18, -0.25), Vector3(1.6, 0.5, 2.3), glass)         # kabin camı
-	_capsule(parent, Vector3(0, 1.43, -0.3), Vector3(1.5, 0.08, 1.7), paint)         # tavan
-	_box(parent, Vector3(0, 0.55, 2.22), Vector3(1.7, 0.28, 0.1), trim)              # ön tampon
-	_box(parent, Vector3(0, 0.55, -2.22), Vector3(1.7, 0.28, 0.1), trim)             # arka tampon
-	_box(parent, Vector3(0, 0.78, 2.21), Vector3(0.7, 0.14, 0.04), chrome)           # ızgara
-	for s in [-1, 1]:
-		_box(parent, Vector3(s * 0.62, 0.85, 2.2), Vector3(0.42, 0.12, 0.06), Game.emissive(Color(1, 0.97, 0.9), 1.5))
-		_box(parent, Vector3(s * 0.95, 1.05, 0.65), Vector3(0.18, 0.08, 0.12), trim)  # ayna
+const SCALE := 1.5
+const DRIVABLE := ["sedan", "sedan-sports", "hatchback-sports", "taxi", "suv", "suv-luxury", "van", "police"]
+const TRAFFIC := ["sedan", "sedan", "taxi", "suv", "van", "hatchback-sports", "suv-luxury", "delivery", "truck", "sedan-sports"]
 
 
-static func wheel(w: VehicleWheel3D) -> void:
+static func build(parent: Node3D, model: String, color := Color(0.8, 0.1, 0.12)) -> Dictionary:
+	var sc := Game.car_scene(model)
+	if sc == null:
+		return _fallback(parent, color)
+	var inst: Node3D = sc.instantiate()
+	inst.scale = Vector3.ONE * SCALE
+	parent.add_child(inst)
+	var wheels := []
+	var body_box := AABB()
+	for mi in inst.find_children("*", "MeshInstance3D", true, false):
+		var m := mi as MeshInstance3D
+		var nm := String(m.name)
+		if nm.begins_with("wheel"):
+			var bb: AABB = m.mesh.get_aabb()
+			var pos: Vector3 = m.position * SCALE
+			wheels.append([pos, bb.size.y * 0.5 * SCALE, m])
+		elif nm == "body":
+			var bb2: AABB = m.mesh.get_aabb()
+			body_box = AABB((m.position + bb2.position) * SCALE, bb2.size * SCALE)
+		# boya: hafif vernik
+		var am := m.get_active_material(0)
+		if am is StandardMaterial3D:
+			var nmat := (am as StandardMaterial3D).duplicate() as StandardMaterial3D
+			nmat.roughness = 0.35
+			nmat.metallic = 0.15
+			nmat.metallic_specular = 0.6
+			nmat.clearcoat_enabled = true
+			nmat.clearcoat = 0.6
+			nmat.clearcoat_roughness = 0.08
+			m.material_override = nmat
+	return {"ok": true, "size": body_box.size, "center": body_box.get_center(), "wheels": wheels, "node": inst}
+
+
+static func _fallback(parent: Node3D, color: Color) -> Dictionary:
+	var paint := Game.paint(color, 0.5, 0.3, 1.0)
+	var glass := Game.paint(Color(0.05, 0.07, 0.09), 0.2, 0.05)
+	_box(parent, Vector3(0, 0.72, 0), Vector3(1.86, 0.6, 4.2), paint)
+	_box(parent, Vector3(0, 1.25, -0.25), Vector3(1.6, 0.55, 2.2), glass)
+	var wheels := []
+	for p in [[-0.82, 1.35], [0.82, 1.35], [-0.82, -1.35], [0.82, -1.35]]:
+		wheels.append([Vector3(p[0], 0.4, p[1]), 0.4, null])
+	return {"ok": false, "size": Vector3(1.9, 1.5, 4.2), "center": Vector3(0, 0.75, 0), "wheels": wheels, "node": null}
+
+
+static func tire_mesh(r: float) -> MeshInstance3D:
 	var tire := MeshInstance3D.new()
 	var cm := CylinderMesh.new()
-	cm.top_radius = 0.36
-	cm.bottom_radius = 0.36
-	cm.height = 0.26
-	cm.radial_segments = 20
+	cm.top_radius = r
+	cm.bottom_radius = r
+	cm.height = 0.28
+	cm.radial_segments = 18
 	tire.mesh = cm
 	tire.rotation.z = PI * 0.5
-	tire.material_override = Game.paint(Color(0.04, 0.04, 0.045), 0.0, 0.9)
-	w.add_child(tire)
-	var rim := MeshInstance3D.new()
-	var rm := CylinderMesh.new()
-	rm.top_radius = 0.22
-	rm.bottom_radius = 0.22
-	rm.height = 0.27
-	rm.radial_segments = 12
-	rim.mesh = rm
-	rim.rotation.z = PI * 0.5
-	rim.material_override = Game.paint(Color(0.75, 0.76, 0.78), 1.0, 0.25)
-	w.add_child(rim)
-
-
-static func _capsule(p: Node3D, pos: Vector3, size: Vector3, m: Material) -> void:
-	# yuvarlatılmış kutu görünümü: kutu + yanlarda silindir kenar
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = Vector3(size.x - size.y * 0.5, size.y, size.z)
-	mi.mesh = bm
-	mi.position = pos
-	mi.material_override = m
-	p.add_child(mi)
-	for s in [-1, 1]:
-		var c := MeshInstance3D.new()
-		var cm := CylinderMesh.new()
-		cm.top_radius = size.y * 0.5
-		cm.bottom_radius = size.y * 0.5
-		cm.height = size.z - size.y * 0.3
-		cm.radial_segments = 14
-		c.mesh = cm
-		c.rotation.x = PI * 0.5
-		c.position = pos + Vector3(s * (size.x * 0.5 - size.y * 0.25 - size.y * 0.25), 0, 0)
-		c.material_override = m
-		p.add_child(c)
+	tire.material_override = Game.paint(Color(0.05, 0.05, 0.055), 0.0, 0.85)
+	return tire
 
 
 static func _box(p: Node3D, pos: Vector3, size: Vector3, m: Material) -> void:
@@ -82,3 +73,54 @@ static func _box(p: Node3D, pos: Vector3, size: Vector3, m: Material) -> void:
 	mi.position = pos
 	mi.material_override = m
 	p.add_child(mi)
+
+
+static func add_lights(parent: Node3D, info: Dictionary) -> Dictionary:
+	## farlar (SpotLight + parlayan yüzey) ve stop lambaları
+	var size: Vector3 = info.size
+	var c: Vector3 = info.center
+	var front := c.z + size.z * 0.5
+	var back := c.z - size.z * 0.5
+	var hy := c.y - size.y * 0.12
+	var brake := StandardMaterial3D.new()
+	brake.albedo_color = Color(0.5, 0.03, 0.03)
+	brake.emission_enabled = true
+	brake.emission = Color(1, 0.05, 0.03)
+	brake.emission_energy_multiplier = 0.4
+	var head := StandardMaterial3D.new()
+	head.albedo_color = Color(0.95, 0.95, 0.9)
+	head.emission_enabled = true
+	head.emission = Color(1, 0.95, 0.85)
+	head.emission_energy_multiplier = 0.0
+	var spots: Array[SpotLight3D] = []
+	for s in [-1, 1]:
+		var tl := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(size.x * 0.18, 0.12, 0.04)
+		tl.mesh = bm
+		tl.material_override = brake
+		tl.position = Vector3(s * size.x * 0.36, hy, back - 0.02)
+		parent.add_child(tl)
+		var hl := MeshInstance3D.new()
+		var hm := BoxMesh.new()
+		hm.size = Vector3(size.x * 0.16, 0.1, 0.04)
+		hl.mesh = hm
+		hl.material_override = head
+		hl.position = Vector3(s * size.x * 0.34, hy, front + 0.02)
+		parent.add_child(hl)
+		var sl := SpotLight3D.new()
+		sl.light_color = Color(1, 0.95, 0.85)
+		sl.light_energy = 7.0
+		sl.spot_range = 38.0
+		sl.spot_angle = 30.0
+		sl.spot_attenuation = 0.8
+		sl.shadow_enabled = s > 0
+		sl.position = Vector3(s * size.x * 0.34, hy, front + 0.1)
+		sl.rotation = Vector3(-0.07, PI, 0)
+		sl.visible = false
+		sl.distance_fade_enabled = true
+		sl.distance_fade_begin = 60.0
+		sl.distance_fade_length = 20.0
+		parent.add_child(sl)
+		spots.append(sl)
+	return {"brake": brake, "head": head, "spots": spots}

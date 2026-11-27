@@ -8,6 +8,7 @@ uniform bool has_nor = false;
 uniform bool has_rough = false;
 uniform float cell = 80.0;
 uniform float road_w = 12.0;
+global uniform float night;
 varying vec3 wpos;
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -50,8 +51,12 @@ void fragment() {
 	// lastik izleri
 	float tire = (vx && !vz) ? exp(-pow((abs(dx - hw * 0.5) - 1.4) * 2.0, 2.0)) : ((vz && !vx) ? exp(-pow((abs(dz - hw * 0.5) - 1.4) * 2.0, 2.0)) : 0.0);
 	col *= 1.0 - tire * 0.15;
+	// gece ıslak asfalt: neonları yansıtır (birikintiler)
+	float puddle = smoothstep(0.55, 0.75, noise(p * 0.18) * 0.7 + noise(p * 0.9) * 0.3);
+	float wet = night * mix(0.55, 1.0, puddle);
+	col *= 1.0 - wet * 0.35;
 	ALBEDO = col;
-	ROUGHNESS = mix(rough, 0.6, paint);
+	ROUGHNESS = mix(mix(rough, 0.6, paint), mix(0.28, 0.06, puddle), wet);
 	SPECULAR = 0.45;
 	if (has_nor) { NORMAL_MAP = texture(asph_n, uv).rgb; NORMAL_MAP_DEPTH = 0.8; }
 }

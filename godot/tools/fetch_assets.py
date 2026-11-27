@@ -5,11 +5,11 @@
 - Google Fonts (OFL): arayüz yazı tipleri
 Bir kaynak inmezse oyun prosedürel yedeklerle çalışır; manifest.json neyin indiğini söyler.
 """
-import json, os, sys, urllib.request, urllib.error
+import json, os, sys, io, zipfile, colorsys, urllib.request, urllib.error
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets')
 UA = {'User-Agent': 'NeonGolgeler-Build/1.0 (github.com/hllakbnr/neon-golgeler)'}
-manifest = {'tex': {}, 'models': {}, 'chars': {}, 'fonts': {}}
+manifest = {'tex': {}, 'models': {}, 'chars': {}, 'fonts': {}, 'kenney': {}}
 
 
 def get(url, binary=True):
@@ -121,6 +121,116 @@ def characters():
             break
 
 
+KENNEY = 'https://opengameart.org/sites/default/files/'
+
+
+def kenney():
+    """Kenney (CC0) oyuncak tarzı paketler: bloklu karakterler + araç kiti."""
+    packs = {
+        'blocky': (['kenney_blocky-characters_2.0.zip'], 'Models/GLB format/'),
+        'cars': (['kenney_car-kit_3.0.zip', 'kenney_car-kit.zip'], 'Models/GLB format/'),
+    }
+    for key, (names, prefix) in packs.items():
+        data = None
+        for n in names:
+            try:
+                data = get(KENNEY + n)
+                print('Kenney', key, '←', n, len(data))
+                break
+            except Exception as e:
+                print('  ✗', n, e)
+        if not data:
+            continue
+        z = zipfile.ZipFile(io.BytesIO(data))
+        out_dir = os.path.join(ROOT, 'kenney', key)
+        for info in z.infolist():
+            if not info.filename.startswith(prefix) or info.is_dir():
+                continue
+            rel = info.filename[len(prefix):]
+            if key == 'cars' and rel.endswith('.glb') and (rel.startswith('debris') or rel.startswith('kart') or rel.startswith('tractor') or rel.startswith('race')):
+                continue
+            save(os.path.join(out_dir, rel), z.read(info))
+        files = sorted(f for f in os.listdir(out_dir) if f.endswith('.glb'))
+        manifest.setdefault('kenney', {})[key] = ['res://assets/kenney/%s/%s' % (key, f) for f in files]
+        print('  ', key, files)
+    _make_skins()
+
+
+def _recolor(src, dst, mapping, extra=None):
+    from PIL import Image, ImageDraw
+    im = Image.open(src).convert('RGBA')
+    px = im.load()
+    w, h = im.size
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = px[x, y]
+            out = mapping(x, y, r, g, b)
+            if out:
+                px[x, y] = out + (a,)
+    if extra:
+        extra(ImageDraw.Draw(im), im)
+    im.save(dst)
+
+
+def _make_skins():
+    """Kaan ve Ela için özgün kostümler (ninja şablonundan yeniden renklendirme)."""
+    try:
+        from PIL import Image  # noqa
+    except Exception:
+        print('PIL yok, özel kostüm atlandı')
+        return
+    tdir = os.path.join(ROOT, 'kenney', 'blocky', 'Textures')
+    src = os.path.join(tdir, 'texture-r.png')
+    if not os.path.exists(src):
+        return
+    def shade(r, g, b):
+        return (r + g + b) / 3.0
+    def is_skin(r, g, b):
+        return r > 200 and g > 150 and b > 110 and r > b + 40
+    def is_belt(r, g, b):
+        return r > 180 and g < 120 and b < 130
+    # Kaan: grafit siyahı kıyafet, turuncu kuşak ve kol şeritleri (Metal)
+    def kaan(x, y, r, g, b):
+        if is_skin(r, g, b):
+            return None
+        if is_belt(r, g, b):
+            return (255, 128, 20)
+        v = shade(r, g, b)
+        if 40 < v < 130:
+            k = (v - 40) / 90.0
+            c = (int(22 + 40 * k), int(22 + 40 * k), int(26 + 44 * k))
+            # kollarda turuncu şerit
+            if 480 <= x < 1024 and 700 <= y < 724:
+                return (240, 110, 15)
+            return c
+        return None
+    def kaan_extra(d, im):
+        # sırtta metal amblemi (iç içe altıgen)
+        cx, cy = 384, 850
+        for rr, col in ((40, (255, 128, 20)), (30, (30, 30, 36)), (18, (200, 200, 210))):
+            pts = [(cx + rr * __import__('math').cos(a * 1.0472), cy + rr * __import__('math').sin(a * 1.0472)) for a in range(6)]
+            d.polygon(pts, fill=col + (255,))
+    _recolor(src, os.path.join(tdir, 'kaan.png'), kaan, kaan_extra)
+    # Ela: camgöbeği / beyaz kıyafet, beyaz kuşak (Rüzgâr)
+    def ela(x, y, r, g, b):
+        if is_skin(r, g, b):
+            return None
+        if is_belt(r, g, b):
+            return (240, 250, 255)
+        v = shade(r, g, b)
+        if 40 < v < 130:
+            k = (v - 40) / 90.0
+            return (int(20 + 60 * k), int(120 + 80 * k), int(130 + 80 * k))
+        return None
+    def ela_extra(d, im):
+        cx, cy = 384, 850
+        for i in range(3):
+            d.arc((cx - 34 + i * 6, cy - 30 + i * 10, cx + 34 - i * 6, cy + 10 + i * 10), 200, 340, fill=(240, 250, 255, 255), width=6)
+    _recolor(src, os.path.join(tdir, 'ela.png'), ela, ela_extra)
+    manifest.setdefault('kenney', {})['skins'] = sorted('res://assets/kenney/blocky/Textures/' + f for f in os.listdir(tdir) if f.endswith('.png'))
+    print('Özel kostümler: kaan.png, ela.png')
+
+
 def fonts():
     for key, url in {
         'display': 'https://github.com/google/fonts/raw/main/ofl/bebasneue/BebasNeue-Regular.ttf',
@@ -132,7 +242,7 @@ def fonts():
 
 if __name__ == '__main__':
     polyhaven()
-    characters()
+    kenney()
     fonts()
     with open(os.path.join(ROOT, 'manifest.json'), 'w', encoding='utf-8') as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)

@@ -125,6 +125,12 @@ func open(as_pause: bool) -> void:
 
 
 func _unhandled_input(e: InputEvent) -> void:
+	# F10: gizli yönetici bölümü (PIN korumalı)
+	if visible and e is InputEventKey and e.pressed and not e.echo and e.physical_keycode == KEY_F10:
+		var ap := AdminPanel.new()
+		get_parent().add_child(ap)
+		get_viewport().set_input_as_handled()
+		return
 	if visible and pause_mode and e.is_action_pressed("pause") and not settings_ui.visible:
 		resume_pressed.emit()
 		get_viewport().set_input_as_handled()

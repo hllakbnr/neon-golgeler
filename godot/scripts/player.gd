@@ -39,7 +39,7 @@ func _ready() -> void:
 	floor_max_angle = deg_to_rad(50)
 	visual = CharacterVisual.new()
 	add_child(visual)
-	visual.setup(Color(0.09, 0.09, 0.11), Color(0.85, 0.42, 0.12), Color(0.05, 0.05, 0.06), "short")
+	visual.setup("kaan", Game.slot_default_skin("kaan"))
 	# kamera düzeni
 	rig = Node3D.new()
 	yaw_node = Node3D.new()
@@ -85,7 +85,11 @@ func _physics_process(delta: float) -> void:
 	if abs(ry) > 0.15:
 		pitch = clamp(pitch - ry * 2.0 * delta * Game.settings.sens, -1.1, 0.6)
 	if car:
-		_follow_cam(delta, car.global_position + Vector3(0, 1.6, 0), 6.5, 0.0)
+		global_position = car.global_position + Vector3(0, 0.5, 0)
+		velocity = Vector3.ZERO
+		var spd_k: float = clamp(car.linear_velocity.length() / 40.0, 0.0, 1.0)
+		_follow_cam(delta, car.global_position + Vector3(0, 1.7, 0), lerp(6.8, 8.2, spd_k), 0.0)
+		cam.fov = lerp(cam.fov, Game.settings.fov + 8.0 * spd_k, delta * 2.0)
 		if controls and Input.is_action_just_pressed("vehicle"):
 			exit_car()
 		return
@@ -150,10 +154,16 @@ func _try_enter() -> void:
 			best = cc
 	if best:
 		car = best
-		visible = false
 		for c in get_children():
 			if c is CollisionShape3D:
 				c.disabled = true
+		# sürücü koltuğuna otur
+		remove_child(visual)
+		car.add_child(visual)
+		visual.position = car.seat
+		visual.rotation = Vector3.ZERO
+		visual.scale = Vector3.ONE * 0.82
+		visual.play("drive", 0.15)
 		car.set_driver(true)
 		entered_vehicle.emit(car)
 
@@ -164,8 +174,12 @@ func exit_car() -> void:
 	var side := car.global_transform.basis.x * -1.8
 	global_position = car.global_position + side + Vector3(0, 0.3, 0)
 	car.set_driver(false)
+	car.remove_child(visual)
+	add_child(visual)
+	visual.position = Vector3.ZERO
+	visual.scale = Vector3.ONE
+	visual.rotation.y = car.global_rotation.y
 	car = null
-	visible = true
 	for c in get_children():
 		if c is CollisionShape3D:
 			c.disabled = false

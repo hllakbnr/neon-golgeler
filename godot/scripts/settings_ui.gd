@@ -150,15 +150,17 @@ func _opts() -> Array:
 				["Küresel Aydınlatma (SDFGI)", "Işığın yüzeylerden sekmesi. Daha gerçekçi ama daha ağır.", "sdfgi", "bool", []],
 				["Yansımalar (SSR)", "Islak zemin ve camlarda ekran-uzayı yansımaları.", "ssr", "bool", []],
 				["Çözünürlük Ölçeği", "3B sahnenin çizim çözünürlüğü. Düşük değer FPS'i artırır.", "render_scale", ["%50", "%67", "%77", "%100"], [0.5, 0.67, 0.77, 1.0]],
-				["Tam Ekran", "Pencereli veya tam ekran.", "fullscreen", "bool", []]]
+				["Tam Ekran", "Pencereli veya tam ekran. Oyun içinde F11 ile de değiştirilebilir.", "fullscreen", "bool", []]]
 		2:
 			return [["Görüş Alanı (FOV)", "Kamera açısı.", "fov", ["60", "65", "70", "75", "80", "90"], [60.0, 65.0, 70.0, 75.0, 80.0, 90.0]],
 				["Fare Hassasiyeti", "Kamera dönüş hızı.", "sens", ["0.5", "0.75", "1.0", "1.25", "1.5", "2.0"], [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]],
 				["Dikeyi Ters Çevir", "Fareyi yukarı itince kamera aşağı bakar.", "invert_y", "bool", []]]
 		3:
-			return [["Ana Ses", "Genel ses seviyesi.", "volume", ["Kapalı", "%25", "%50", "%75", "%100"], [0.0, 0.25, 0.5, 0.75, 1.0]]]
+			return [["Ana Ses", "Genel ses seviyesi.", "volume", ["Kapalı", "%25", "%50", "%75", "%100"], [0.0, 0.25, 0.5, 0.75, 1.0]],
+				["Diyalog Sesi", "Karakterlerin konuşma sesi.", "voice_volume", ["Kapalı", "%25", "%50", "%75", "%100"], [0.0, 0.25, 0.5, 0.75, 1.0]],
+				["Altyazılar", "Konuşmaların yazısı ekranın altında görünür.", "subtitles", "bool", []]]
 		_:
-			return [["Klavye / Fare", "WASD hareket · Shift koş · Boşluk zıpla · F araca bin/in · Boşluk el freni · T zamanı hızlandır · Esc menü", "", "info", []],
+			return [["Klavye / Fare", "WASD hareket · Shift koş · Boşluk zıpla · F araca bin/in · Boşluk el freni · T zamanı hızlandır · F11 tam ekran · Esc menü", "", "info", []],
 				["Gamepad", "Sol çubuk hareket · Sağ çubuk kamera · Ⓐ zıpla · Ⓨ araç · RT/LT gaz/fren · Start menü", "", "info", []]]
 
 

@@ -8,30 +8,33 @@ var to := Vector2i.ZERO
 var speed := 0.0
 var max_speed := 11.0
 var color := Color.WHITE
+var model := "sedan"
+var half_len := 2.0
+var lights := {}
+var wheel_nodes: Array = []
 
 
 func _ready() -> void:
 	add_to_group("traffic")
+	var info := CarModel.build(self, model)
+	var sz: Vector3 = info.size
+	var c: Vector3 = info.center
 	var shape := CollisionShape3D.new()
 	var bs := BoxShape3D.new()
-	bs.size = Vector3(1.9, 1.4, 4.4)
+	bs.size = Vector3(sz.x * 0.94, sz.y * 0.8, sz.z * 0.97)
 	shape.shape = bs
-	shape.position.y = 0.8
+	shape.position = c
 	add_child(shape)
-	CarModel.build(self, color)
-	for p in [[-0.82, 1.35], [0.82, 1.35], [-0.82, -1.35], [0.82, -1.35]]:
-		var w := Node3D.new()
-		w.position = Vector3(p[0], 0.36, p[1])
-		add_child(w)
-		var tire := MeshInstance3D.new()
-		var cm := CylinderMesh.new()
-		cm.top_radius = 0.36
-		cm.bottom_radius = 0.36
-		cm.height = 0.26
-		tire.mesh = cm
-		tire.rotation.z = PI * 0.5
-		tire.material_override = Game.paint(Color(0.04, 0.04, 0.045), 0.0, 0.9)
-		w.add_child(tire)
+	half_len = sz.z * 0.5
+	lights = CarModel.add_lights(self, info)
+	for w in info.wheels:
+		if w[2] == null:
+			var t := CarModel.tire_mesh(w[1])
+			t.position = w[0]
+			add_child(t)
+			wheel_nodes.append(t)
+		else:
+			wheel_nodes.append(w[2])
 	_place()
 
 
@@ -85,9 +88,19 @@ func _physics_process(delta: float) -> void:
 		var rel: Vector3 = (n as Node3D).global_position - global_position
 		var ahead := rel.dot(fwd)
 		var lateral := (rel - fwd * ahead).length()
-		if ahead > 0.0 and ahead < 10.0 and lateral < 2.2:
-			want = min(want, max(0.0, (ahead - 5.5) * 1.2))
+		if ahead > 0.0 and ahead < 12.0 and lateral < 2.2:
+			want = min(want, max(0.0, (ahead - half_len - 3.0) * 1.2))
+	var prev := speed
 	speed = move_toward(speed, want, delta * (6.0 if want > speed else 12.0))
+	var lon: bool = Game.night > 0.4
+	for l in lights.get("spots", []):
+		l.visible = lon
+	if lights.has("head"):
+		lights.head.emission_energy_multiplier = 3.0 if lon else 0.0
+	if lights.has("brake"):
+		lights.brake.emission_energy_multiplier = 5.0 if speed < prev - 0.01 or speed < 0.1 else (1.2 if lon else 0.3)
+	for wn in wheel_nodes:
+		(wn as Node3D).rotate_object_local(Vector3.RIGHT, speed * delta / 0.45)
 	if dist < 2.0:
 		_next()
 		return

@@ -5,7 +5,20 @@ signal settings_changed
 
 const SETTINGS_PATH := "user://settings.cfg"
 
-var manifest := {"tex": {}, "models": {}, "chars": {}, "fonts": {}}
+var manifest := {"tex": {}, "models": {}, "chars": {}, "fonts": {}, "kenney": {}}
+const ADMIN_PATH := "user://admin/slots.json"
+## admin bölümünde değiştirilebilen karakter yuvaları
+const SLOTS := {
+	"kaan": ["Kaan Demir", "kaan.png"], "ela": ["Ela Poyraz", "ela.png"],
+	"polis": ["Polis", "texture-j.png"],
+	"yaya1": ["Yaya 1", "texture-a.png"], "yaya2": ["Yaya 2", "texture-b.png"], "yaya3": ["Yaya 3", "texture-c.png"],
+	"yaya4": ["Yaya 4", "texture-e.png"], "yaya5": ["Yaya 5", "texture-f.png"], "yaya6": ["Yaya 6", "texture-g.png"],
+	"yaya7": ["Yaya 7", "texture-i.png"], "yaya8": ["Yaya 8", "texture-l.png"], "yaya9": ["Yaya 9", "texture-m.png"],
+	"yaya10": ["Yaya 10", "texture-o.png"], "yaya11": ["Yaya 11", "texture-p.png"], "yaya12": ["Yaya 12", "texture-q.png"],
+}
+var admin := {"pin": "", "slots": {}}
+var _blocky: PackedScene
+var _car_cache := {}
 var settings := {
 	"quality": 2,          # 0 düşük · 1 orta · 2 yüksek
 	"sdfgi": true,
@@ -18,6 +31,9 @@ var settings := {
 	"time_speed": 1,       # 0 yavaş · 1 normal · 2 hızlı
 	"move_speed": 2,       # 0 yürü · 1 hızlı yürü · 2 hafif koşu
 	"render_scale": 1.0,
+	"subtitles": true,
+	"voice_volume": 1.0,
+	"music_volume": 0.6,
 }
 var time_of_day := 17.5    # saat (0..24)
 var day := 1
@@ -39,6 +55,7 @@ func _ready() -> void:
 		RenderingServer.global_shader_parameter_add(&"night", RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.0)
 	_load_manifest()
 	_load_settings()
+	_load_admin()
 	_setup_input()
 	_load_fonts()
 	apply_settings()
@@ -74,6 +91,14 @@ func apply_settings() -> void:
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if settings.fullscreen else DisplayServer.WINDOW_MODE_WINDOWED)
 	get_viewport().scaling_3d_scale = settings.render_scale
 	AudioServer.set_bus_volume_db(0, linear_to_db(max(0.001, settings.volume)))
+	for bus in [["Voice", settings.voice_volume], ["Music", settings.music_volume]]:
+		var i := AudioServer.get_bus_index(bus[0])
+		if i < 0:
+			AudioServer.add_bus()
+			i = AudioServer.bus_count - 1
+			AudioServer.set_bus_name(i, bus[0])
+			AudioServer.set_bus_send(i, "Master")
+		AudioServer.set_bus_volume_db(i, linear_to_db(max(0.001, float(bus[1]))))
 	settings_changed.emit()
 
 
@@ -89,6 +114,15 @@ func _load_fonts() -> void:
 		th.default_font = font_ui
 		th.default_font_size = 18
 		get_tree().root.theme = th
+
+
+func _input(e: InputEvent) -> void:
+	# F11: tam ekran aç / kapat (her yerde)
+	if e is InputEventKey and e.pressed and not e.echo and e.physical_keycode == KEY_F11:
+		settings.fullscreen = not settings.fullscreen
+		save_settings()
+		apply_settings()
+		get_viewport().set_input_as_handled()
 
 
 func _key(action: String, keys: Array, buttons: Array = [], mouse: Array = []) -> void:
@@ -222,11 +256,63 @@ func model(key: String) -> PackedScene:
 	return null
 
 
-func character_scene() -> PackedScene:
-	var p = manifest.chars.get("human", "")
-	if p != "" and ResourceLoader.exists(p):
-		return load(p)
+func blocky_scene() -> PackedScene:
+	if _blocky:
+		return _blocky
+	for p in manifest.kenney.get("blocky", []):
+		if ResourceLoader.exists(p):
+			_blocky = load(p)
+			return _blocky
 	return null
+
+
+func skin_path(file: String) -> String:
+	if file.begins_with("res://") or file.begins_with("user://") or file.is_absolute_path():
+		return file
+	return "res://assets/kenney/blocky/Textures/" + file
+
+
+func load_texture(path: String) -> Texture2D:
+	path = skin_path(path)
+	if path.begins_with("res://"):
+		return load(path) if ResourceLoader.exists(path) else null
+	if FileAccess.file_exists(path):
+		var img := Image.load_from_file(path)
+		if img:
+			img.generate_mipmaps()
+			return ImageTexture.create_from_image(img)
+	return null
+
+
+func car_scene(name: String) -> PackedScene:
+	if _car_cache.has(name):
+		return _car_cache[name]
+	var p := "res://assets/kenney/cars/%s.glb" % name
+	var sc: PackedScene = load(p) if ResourceLoader.exists(p) else null
+	_car_cache[name] = sc
+	return sc
+
+
+# ---------------------------------------------------------------- admin yuvaları
+func _load_admin() -> void:
+	if FileAccess.file_exists(ADMIN_PATH):
+		var d = JSON.parse_string(FileAccess.get_file_as_string(ADMIN_PATH))
+		if d is Dictionary:
+			admin.merge(d, true)
+
+
+func save_admin() -> void:
+	DirAccess.make_dir_recursive_absolute("user://admin")
+	var f := FileAccess.open(ADMIN_PATH, FileAccess.WRITE)
+	f.store_string(JSON.stringify(admin, "  "))
+
+
+func slot_cfg(slot: String) -> Dictionary:
+	return admin.slots.get(slot, {})
+
+
+func slot_default_skin(slot: String) -> String:
+	return SLOTS[slot][1] if SLOTS.has(slot) else "texture-a.png"
 
 
 func styled_label(text: String, size: int, color := Color.WHITE, display := false) -> Label:

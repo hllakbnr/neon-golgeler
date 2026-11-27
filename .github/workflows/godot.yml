@@ -20,8 +20,16 @@ jobs:
           mkdir -p ~/.local/share/godot/export_templates/4.3.stable /tmp/tpl
           unzip -q Godot_v4.3-stable_export_templates.tpz -d /tmp/tpl
           mv /tmp/tpl/templates/* ~/.local/share/godot/export_templates/4.3.stable/
-      - name: Ücretsiz varlıkları indir (Poly Haven CC0, three.js MIT, Google Fonts OFL)
-        run: python3 godot/tools/fetch_assets.py
+      - name: Ücretsiz varlıkları indir (Poly Haven CC0, Kenney CC0, Google Fonts OFL)
+        run: |
+          pip install -q pillow || true
+          python3 godot/tools/fetch_assets.py
+      - name: Türkçe diyalog seslendirme (Piper TTS)
+        run: |
+          sudo apt-get install -y -qq ffmpeg > /dev/null || true
+          pip install -q piper-tts || true
+          python3 godot/tools/make_voices.py || true
+          ls -la godot/assets/voice || true
       - name: Varlıkları içe aktar
         working-directory: godot
         run: |

@@ -1,0 +1,8 @@
+{
+  "intro": [
+    {"id": "ela_01", "who": "ela", "text": "Kaan, şehre hoş geldin. Neon gecesi başlamak üzere."},
+    {"id": "kaan_01", "who": "kaan", "text": "Ela? Bu şehir eskisinden çok daha parlak olmuş."},
+    {"id": "ela_02", "who": "ela", "text": "Merkezdeki kuleler gece yanınca her şey değişir. Bir araba bul, seni Eski Çarşı'da bekliyorum."},
+    {"id": "kaan_02", "who": "kaan", "text": "Tamam. Yoldayım."}
+  ]
+}
