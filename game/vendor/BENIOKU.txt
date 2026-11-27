@@ -1,0 +1,2 @@
+Bu klasör "npm run vendor" (tools/fetch-vendor.mjs) ile Three.js dosyalarıyla dolar.
+Doluysa oyun internet olmadan çalışır; boşsa Three.js CDN üzerinden yüklenir.

@@ -1,0 +1,48 @@
+name: Derle (exe + apk)
+on:
+  push: { branches: [main] }
+  workflow_dispatch:
+permissions: { contents: write }
+jobs:
+  exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm install
+      - run: npm run vendor
+      - run: npx electron-builder --win portable nsis --publish never
+        env: { CSC_IDENTITY_AUTO_DISCOVERY: "false" }
+      - uses: actions/upload-artifact@v4
+        with: { name: NeonGolgeler-Windows, path: "dist/*.exe" }
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: node tools/fetch-vendor.mjs
+      - run: rm -rf android/app/src/main/assets/game && cp -r game android/app/src/main/assets/game
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: gradle/actions/setup-gradle@v3
+        with: { gradle-version: "8.7" }
+      - run: gradle assembleRelease --no-daemon
+        working-directory: android
+      - run: cp android/app/build/outputs/apk/release/app-release.apk NeonGolgeler.apk
+      - uses: actions/upload-artifact@v4
+        with: { name: NeonGolgeler-Android, path: NeonGolgeler.apk }
+  release:
+    needs: [exe, apk]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: out }
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: surum-${{ github.run_number }}
+          name: Neon Gölgeler — sürüm ${{ github.run_number }}
+          files: |
+            out/NeonGolgeler-Windows/*.exe
+            out/NeonGolgeler-Android/NeonGolgeler.apk
