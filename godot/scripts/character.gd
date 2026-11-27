@@ -36,7 +36,14 @@ var note := ""
 
 func setup(slot_id: String, skin := "") -> void:
 	slot = slot_id
+	# eski modeli hemen sahneden çıkar (animasyon/iskelet bir kare daha işlenmesin), sonra sil
+	if anim and is_instance_valid(anim):
+		anim.stop()
+		anim.active = false
+	anim = null
+	rig = null
 	for c in get_children():
+		remove_child(c)
 		c.queue_free()
 	pivots.clear()
 	cur = ""

@@ -506,19 +506,7 @@ func _run_shots() -> void:
 		await _wait(12)
 		await Game.shot("17_ozel_model_yumruk")
 		Game.admin.slots.erase("yaya1")
-	# iskeletsiz tek parça "minifig" testi (Element Arenası parçalama sistemi)
-	var mf := "user://test_minifig.glb"
-	if _make_test_minifig(mf):
-		Game.admin.slots["yaya2"] = {"type": "glb", "path": mf}
-		ap.list.select(4)
-		ap._select("yaya2")
-		await _wait(20)
-		print("MINIFIG mod=", ap.preview.mode, " not=", ap.preview.note)
-		await Game.shot("26_minifig_yuru")
-		ap.preview.play_once("punch_cross", 0.1)
-		await _wait(10)
-		await Game.shot("27_minifig_yumruk")
-		Game.admin.slots.erase("yaya2")
+	# tek parça "minifig" testi poz testinde (animtest.yml) yapılıyor
 	ap.queue_free()
 	await _wait(5)
 	await Game.shot("15_duraklat")
