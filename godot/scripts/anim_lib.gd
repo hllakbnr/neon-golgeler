@@ -145,9 +145,21 @@ static func _prepare(tree: SceneTree) -> bool:
 	return _src.size() > 0
 
 
+static func _anim_key(n: String) -> String:
+	var k := n.get_slice("/", n.get_slice_count("/") - 1).to_lower()
+	if k.ends_with("_loop"):
+		k = k.substr(0, k.length() - 5)
+	return _norm(k)
+
+
 static func _anim_name(ap: AnimationPlayer, want: String) -> String:
+	## sürümler arasında ad farkı olabilir (ör. "Walk_Loop" ↔ "Walk"); normalize ederek eşle
+	var wk := _anim_key(want)
 	for n in ap.get_animation_list():
 		if String(n) == want or String(n).ends_with("/" + want):
+			return n
+	for n in ap.get_animation_list():
+		if _anim_key(String(n)) == wk:
 			return n
 	return ""
 

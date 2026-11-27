@@ -171,9 +171,7 @@ func _environment() -> void:
 	env.set_glow_level(3, 0.8)
 	env.set_glow_level(5, 0.5)
 	env.fog_enabled = true
-	env.fog_density = 0.00042
-	env.fog_height = 18.0
-	env.fog_height_density = 0.012
+	env.fog_density = 0.00045
 	env.fog_aerial_perspective = 0.35
 	env.fog_sky_affect = 0.15
 	env.adjustment_enabled = true

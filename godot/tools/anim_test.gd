@@ -17,6 +17,13 @@ func _run() -> void:
 		print(id, " anim sayısı: ", names.size(), " örnek: ", names.slice(0, 6))
 		print(id, " kütüphaneler: ", ap.get_animation_library_list(), " root_node=", ap.root_node, " active=", ap.active)
 		print(id, " eşleme: ", s.map)
+		print(id, " TÜM: ", names)
+		var missing := []
+		for g in AnimLib.WANT.keys():
+			var w: Array = AnimLib.WANT[g]
+			if w[0] == id and AnimLib._anim_name(ap, w[1]) == "":
+				missing.append(w[1])
+		print(id, " BULUNAMAYAN: ", missing)
 		var want: String = "Walk_Loop" if id == 1 else "Sword_Regular_A"
 		var an := AnimLib._anim_name(ap, want)
 		print(id, " anim adı: '", an, "'")
