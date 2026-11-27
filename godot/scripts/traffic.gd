@@ -14,6 +14,12 @@ var half_len := 2.0
 var lights := {}
 var wheel_nodes: Array = []
 var crashed := 0.0
+var pursuit: Node3D = null      # polis: kovalanan hedef
+var police_unit := false        # aranma sistemiyle gelen ekip (işi bitince gider)
+var _siren: Array = []
+var _siren_snd: AudioStreamPlayer3D
+var _deployed := false
+var _siren_t := 0.0
 
 
 func _ready() -> void:
@@ -53,6 +59,54 @@ func _ready() -> void:
 		else:
 			wheel_nodes.append(w[2])
 	_place()
+	if model == "police":
+		_add_siren()
+
+
+func _add_siren() -> void:
+	for k in 2:
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.42, 0.14, 0.22)
+		mi.mesh = bm
+		mi.material_override = Game.emissive(Color(1, 0.1, 0.1) if k == 0 else Color(0.15, 0.3, 1.0), 0.3)
+		mi.position = Vector3(-0.25 + 0.5 * k, 1.62, 0.0)
+		add_child(mi)
+		var l := OmniLight3D.new()
+		l.light_color = Color(1, 0.1, 0.1) if k == 0 else Color(0.2, 0.35, 1.0)
+		l.omni_range = 12.0
+		l.light_energy = 0.0
+		l.position = mi.position + Vector3(0, 0.3, 0)
+		add_child(l)
+		_siren.append([mi, l])
+
+
+func _siren_update(delta: float) -> void:
+	if _siren.is_empty():
+		return
+	var on := pursuit != null
+	_siren_t += delta * 6.0
+	for k in _siren.size():
+		var ph := sin(_siren_t + k * PI) > 0.0
+		var mat := (_siren[k][0] as MeshInstance3D).material_override as StandardMaterial3D
+		mat.emission_energy_multiplier = (6.0 if ph else 0.4) if on else 0.3
+		(_siren[k][1] as OmniLight3D).light_energy = (5.0 if ph else 0.0) if on else 0.0
+	if on and _siren_snd == null:
+		_siren_snd = AudioStreamPlayer3D.new()
+		_siren_snd.stream = Sfx.stream("siren")
+		_siren_snd.unit_size = 14.0
+		_siren_snd.max_distance = 220.0
+		_siren_snd.volume_db = -4.0
+		add_child(_siren_snd)
+		_siren_snd.play()
+	elif not on and _siren_snd:
+		_siren_snd.queue_free()
+		_siren_snd = null
+
+
+func end_pursuit() -> void:
+	pursuit = null
+	max_speed = 11.0
 
 
 func _node_pos(n: Vector2i) -> Vector3:
@@ -67,7 +121,9 @@ func _lane_offset(a: Vector2i, b: Vector2i) -> Vector3:
 func _place() -> void:
 	var p := _node_pos(from) + _lane_offset(from, to)
 	global_position = p
-	look_at(_node_pos(to) + _lane_offset(from, to), Vector3.UP, true)
+	var tgt := _node_pos(to) + _lane_offset(from, to)
+	if from != to and tgt.distance_to(p) > 0.1:
+		look_at(tgt, Vector3.UP, true)
 
 
 func _next() -> void:
@@ -78,6 +134,11 @@ func _next() -> void:
 			continue
 		opts.append(n)
 	from = to
+	if pursuit and is_instance_valid(pursuit) and opts.size() > 0:
+		var pp := pursuit.global_position
+		opts.sort_custom(func(a, b): return _node_pos(a).distance_to(pp) < _node_pos(b).distance_to(pp))
+		to = opts[0]
+		return
 	to = opts[randi() % opts.size()] if opts.size() > 0 else from
 
 
@@ -100,6 +161,31 @@ func hit(other_vel: Vector3) -> void:
 	speed = 0.0
 	if lights.has("brake"):
 		lights.brake.emission_energy_multiplier = 5.0
+
+
+func _deploy() -> void:
+	## olay yerine varınca iki polis iner
+	if world == null:
+		return
+	var r := world.blocks[0]
+	var bd := 1e9
+	for b in world.blocks:
+		var d := Vector2(global_position.x, global_position.z).distance_to(b.get_center())
+		if d < bd:
+			bd = d
+			r = b
+	for k in 2:
+		var o := Pedestrian.new()
+		o.role = "police"
+		o.slot = "polis"
+		o.spawned = true
+		o.world = world
+		o.path = world.sidewalk_loop(r)
+		world.add_child(o)
+		o.global_position = global_position + global_transform.basis.x * (1.6 if k == 0 else -1.6) + Vector3(0, 0.05, 0)
+		o.state = Pedestrian.S.FIGHT
+		o.threat = pursuit
+		o.hostile = true
 
 
 func _recover() -> void:
@@ -126,27 +212,45 @@ func _recover() -> void:
 func _physics_process(delta: float) -> void:
 	if world == null or Game.paused:
 		return
+	_siren_update(delta)
 	if crashed > 0.0:
 		crashed -= delta
 		if crashed <= 0.0:
 			_recover()
 		return
+	if police_unit and pursuit == null:
+		var cam := get_viewport().get_camera_3d()
+		if cam == null or cam.global_position.distance_to(global_position) > 160.0:
+			queue_free()
+			return
 	var target := _node_pos(to) + _lane_offset(from, to)
 	var to_t := target - global_position
 	to_t.y = 0.0
 	var dist := to_t.length()
 	var want := max_speed
+	if pursuit and is_instance_valid(pursuit):
+		max_speed = 17.0
+		var pd := pursuit.global_position.distance_to(global_position)
+		if pd < 24.0 and not (pursuit is Player and (pursuit as Player).car):
+			want = 0.0
+			if not _deployed and speed < 1.0:
+				_deployed = true
+				_deploy()
+		elif pd > 40.0:
+			_deployed = false
 	# ışık: x yönündeki hareket faz 0'da, z yönündeki faz 1'de yeşil
 	var along_x: bool = from.y == to.y
 	var phase := int(Time.get_ticks_msec() / 8000) % 2
 	var green := (phase == 0) == along_x
 	var stop_line: float = world.ROAD_W * 0.5 + 4.0
-	if not green and dist > stop_line - 1.0 and dist < stop_line + 8.0:
+	if not green and pursuit == null and dist > stop_line - 1.0 and dist < stop_line + 8.0:
 		want = 0.0 if dist < stop_line + 1.5 else 3.0
 	# önündeki engeller (araçlar, yayalar, oyuncu)
 	var fwd := global_transform.basis.z
-	for n in get_tree().get_nodes_in_group("traffic") + get_tree().get_nodes_in_group("cars") + get_tree().get_nodes_in_group("people") + get_tree().get_nodes_in_group("player"):
+	for n in get_tree().get_nodes_in_group("traffic") + get_tree().get_nodes_in_group("cars") + get_tree().get_nodes_in_group("people") + get_tree().get_nodes_in_group("police") + get_tree().get_nodes_in_group("player"):
 		if n == self or not (n is Node3D):
+			continue
+		if n is Pedestrian and (n as Pedestrian).is_down():
 			continue
 		var rel: Vector3 = (n as Node3D).global_position - global_position
 		var ahead := rel.dot(fwd)

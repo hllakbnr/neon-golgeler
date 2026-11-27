@@ -4,6 +4,10 @@
 kurulamazsa Piper (MIT) + rhasspy/piper-voices Türkçe modeline düşülür.
 Not: XTTS v2 modeli Coqui Public Model License ile gelir (ticari olmayan kullanım).
 Ela için ses perdesi yükseltilir, Kaan için hafif kalınlaştırılır. Çıktı: assets/voice/<id>.ogg
+Öncelik: edge-tts (Microsoft'un doğal Türkçe sinir ağı sesleri: Ahmet / Emel; hız ve perde ile
+karaktere göre çeşitlendirilir) → XTTS v2 (yalnız hikâye satırları) → Piper.
+Not: edge-tts çevrim içi bir hizmettir; kişisel deneme sürümleri içindir. Ticari sürümde lisanslı
+seslendirme/oyuncu kullanılmalı.
 """
 import json, os, subprocess, sys, urllib.request
 
@@ -16,7 +20,7 @@ VOICES = {'dfki': 'dfki/medium/tr_TR-dfki-medium', 'fahrettin': 'fahrettin/mediu
 # karakter → (ses modeli, perde çarpanı)
 CAST = {'kaan': ('fahrettin', 0.97), 'ela': ('dfki', 1.24), 'polis': ('fettah', 1.0)}
 # XTTS hazır konuşmacıları: Kaan genç erkek, Ela genç kadın, polis tok erkek sesi
-XCAST = {'kaan': 'Damien Black', 'ela': 'Ana Florence', 'polis': 'Viktor Menelaos'}
+XCAST = {'kaan': 'Damien Black', 'ela': 'Ana Florence', 'polis': 'Viktor Menelaos', 'tarik': 'Craig Gutsy', 'usta': 'Baldur Sanjin'}
 
 
 def xtts_all(lines):
@@ -39,6 +43,56 @@ def xtts_all(lines):
                 print('  ✓ XTTS', l['id'], who)
         except Exception as e:
             print('  ✗ XTTS', l['id'], repr(e)[:300])
+    return done
+
+
+# edge-tts: (ses, hız, perde)
+ECAST = {
+    'kaan': ('tr-TR-AhmetNeural', '+0%', '+0Hz'), 'ela': ('tr-TR-EmelNeural', '+0%', '+0Hz'),
+    'polis': ('tr-TR-AhmetNeural', '-6%', '-10Hz'), 'tarik': ('tr-TR-AhmetNeural', '+14%', '+8Hz'),
+    'usta': ('tr-TR-AhmetNeural', '-16%', '-16Hz'), 'yaya': ('tr-TR-AhmetNeural', '+4%', '+4Hz'),
+    'erkek': ('tr-TR-AhmetNeural', '+6%', '-4Hz'), 'kadin': ('tr-TR-EmelNeural', '+6%', '+6Hz'),
+    'dj_m': ('tr-TR-AhmetNeural', '+8%', '+2Hz'), 'dj_k': ('tr-TR-EmelNeural', '+4%', '+0Hz'),
+}
+
+
+def edge_all(lines):
+    """edge-tts ile satırları mp3'e çevirir; başaranların id → dosya sözlüğü."""
+    done = {}
+    try:
+        import asyncio
+        import edge_tts
+    except Exception as e:
+        print('edge-tts yok:', repr(e)[:200])
+        return done
+
+    async def one(l):
+        who = l.get('who', 'kaan')
+        voice, rate, pitch = ECAST.get(who, ECAST['kaan'])
+        # aynı türden yaya satırlarında hafif çeşitlilik
+        if who in ('erkek', 'kadin'):
+            k = sum(ord(c) for c in l['id']) % 3
+            rate = ['+0%', '+8%', '-4%'][k]
+            pitch = (['-6Hz', '+2Hz', '-12Hz'] if who == 'erkek' else ['+4Hz', '+10Hz', '-2Hz'])[k]
+        mp3 = os.path.join('/tmp', 'e_' + l['id'] + '.mp3')
+        c = edge_tts.Communicate(l['text'], voice, rate=rate, pitch=pitch)
+        await c.save(mp3)
+        return mp3
+
+    fails = 0
+    for l in lines:
+        try:
+            mp3 = asyncio.run(one(l))
+            if os.path.getsize(mp3) > 800:
+                done[l['id']] = mp3
+                print('  ✓ edge', l['id'], l.get('who'))
+                continue
+        except Exception as e:
+            print('  ✗ edge', l['id'], repr(e)[:200])
+        fails += 1
+        if fails >= 3 and not done:
+            print('edge-tts çalışmıyor, yedeğe geçiliyor')
+            break
     return done
 
 
@@ -81,11 +135,18 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     n = 0
     all_lines = [l for lines in data.values() for l in lines]
-    xt = xtts_all(all_lines) if os.environ.get('NG_TTS', 'xtts') == 'xtts' else {}
+    ed = edge_all(all_lines)
+    rest = [l for l in all_lines if l['id'] not in ed]
+    # XTTS yavaştır: yalnızca hikâye/telefon satırları (yaya tepkileri ve DJ anonsları Piper'a kalır)
+    story = [l for l in rest if not (l['id'].startswith('bark_') or l['id'].startswith('dj_'))]
+    xt = xtts_all(story) if (story and os.environ.get('NG_TTS', 'xtts') == 'xtts') else {}
     for l in all_lines:
             who = l.get('who', 'kaan')
-            name, pitch = CAST.get(who, ('dfki', 1.0))
-            if l['id'] in xt:
+            name, pitch = CAST.get(who, ('fettah' if who in ('erkek', 'tarik', 'usta', 'dj_m', 'yaya') else ('dfki' if who in ('kadin', 'dj_k') else 'dfki'), 1.24 if who in ('kadin', 'dj_k') else 1.0))
+            if l['id'] in ed:
+                wav = ed[l['id']]
+                pitch = 1.0
+            elif l['id'] in xt:
                 wav = xt[l['id']]
                 pitch = 1.0
             else:

@@ -75,7 +75,8 @@ func tick(delta: float) -> void:
 		var b: Vector3 = _coaster_pts[(int(f) + 1) % n]
 		var p := a.lerp(b, f - floor(f))
 		_coaster_car.global_position = p + Vector3(0, 0.6, 0)
-		if b.distance_to(a) > 0.01:
+		var dv := b - p
+		if dv.length() > 0.05 and absf(dv.normalized().y) < 0.98:
 			_coaster_car.look_at(b + Vector3(0, 0.6, 0), Vector3.UP)
 
 
@@ -638,7 +639,14 @@ func _street_furniture() -> void:
 							light.visible = false
 							w.add_child(light)
 							w.street_lights.append(light)
-						w.breakables.append({"kind": "lamp", "xf": lx[0], "list": "lamp", "idx": lamps.size() - 1, "light": light, "r": 0.18, "h": 7.0})
+						var lcs := CollisionShape3D.new()
+						var lsh := CylinderShape3D.new()
+						lsh.radius = 0.14
+						lsh.height = 7.0
+						lcs.shape = lsh
+						lcs.position = p + Vector3(0, 3.5, 0)
+						w.props.add_child(lcs)
+						w.breakables.append({"kind": "lamp", "xf": lx[0], "list": "lamp", "idx": lamps.size() - 1, "light": light, "r": 0.18, "h": 7.0, "cs": lcs, "pos": p})
 				t += 12.0
 	# sahil şeridi palmiyeleri (batı kıyısı)
 	var z := -w.EDGE_Z + 10.0
@@ -676,7 +684,7 @@ func _street_furniture() -> void:
 			cs.position.y = 0.5
 			sb.add_child(cs)
 			n.add_child(sb)
-			w.breakables.append({"kind": key, "node": n, "r": cy.radius, "h": 1.0})
+			w.breakables.append({"kind": key, "node": n, "r": cy.radius, "h": 1.0, "body": sb, "pos": n.position})
 	for i in range(-w.GX + 1, w.GX):
 		for j in range(-w.GZ + 1, w.GZ):
 			var k := Vector3(i * w.CELL, 0, j * w.CELL)

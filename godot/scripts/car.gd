@@ -15,6 +15,8 @@ var size := Vector3(2.2, 1.7, 3.9)
 var seat := Vector3(0.45, 0.35, -0.05)
 var _steer := 0.0
 var _thr := 0.0
+var _prop_t := 0.0
+var horn_ok := true
 
 
 func _ready() -> void:
@@ -87,6 +89,22 @@ func _physics_process(delta: float) -> void:
 	for l in lights.get("spots", []):
 		l.visible = lights_on
 	_stabilize(delta)
+	_prop_t -= delta
+	var spd := linear_velocity.length()
+	if spd > 2.5 and _prop_t <= 0.0:
+		_prop_t = 0.05
+		var w := get_parent() as World
+		if w and w.in_city(global_position, 30.0):
+			var b := global_transform.basis
+			var front := global_position + b.z * size.z * 0.45 + Vector3(0, 0.6, 0)
+			if w.hit_props(front, size.x * 0.6, linear_velocity * 0.9):
+				linear_velocity *= 0.9
+				if driven:
+					var pl := get_tree().get_first_node_in_group("player") as Player
+					if pl:
+						pl.shake(0.25)
+	if driven and horn_ok and not Game.paused and Input.is_action_just_pressed("horn"):
+		Sfx.play("horn", global_position, -2.0)
 	if not driven:
 		return
 	var thr := 0.0
@@ -144,3 +162,19 @@ func _stabilize(delta: float) -> void:
 
 func speed_kmh() -> float:
 	return linear_velocity.length() * 3.6
+
+
+func repaint(c: Color) -> void:
+	## Boya Atölyesi: gövde rengi değişir
+	body_color = c
+	for mi in find_children("*", "MeshInstance3D", true, false):
+		var m := mi as MeshInstance3D
+		if String(m.name).to_lower() != "body":
+			continue
+		var mat := m.material_override as StandardMaterial3D
+		if mat == null:
+			mat = m.get_active_material(0) as StandardMaterial3D
+		if mat:
+			var nm := mat.duplicate() as StandardMaterial3D
+			nm.albedo_color = c.lightened(0.15)
+			m.material_override = nm

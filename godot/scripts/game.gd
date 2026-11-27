@@ -43,11 +43,18 @@ var paused := false
 var shots_dir := ""        # CI ekran görüntüsü modu
 var pose_test := false     # CI: yalnızca animasyon pozlarını çiz
 var money := 500           # cüzdan (₺)
+var outfit := "varsayilan"
+var owned_outfits: Array = ["varsayilan"]
+var photos := 0            # telefonla çekilen fotoğraflar
+var feed: Array = []       # NeonGram akışı (oyuncunun olaylarına tepki veren gönderiler)
 var bank := 2500           # banka hesabı
 var has_waypoint := false
 var waypoint := Vector3.ZERO
 var route := PackedVector3Array()
 var keyart: Array = []     # yükleme ekranı görselleri
+var hud: Node = null       # oyun içi arayüz (bildirimler için)
+var base_ts := 1.0         # silah çarkı vb. yavaş çekim taban hızı
+var _hitstop := 0
 var night := 0.0           # 0 gündüz · 1 gece (World günceller)
 var font_display: Font
 var font_ui: Font
@@ -104,7 +111,7 @@ func apply_settings() -> void:
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if settings.fullscreen else DisplayServer.WINDOW_MODE_WINDOWED)
 	get_viewport().scaling_3d_scale = settings.render_scale
 	AudioServer.set_bus_volume_db(0, linear_to_db(max(0.001, settings.volume)))
-	for bus in [["Voice", settings.voice_volume], ["Music", settings.music_volume]]:
+	for bus in [["Voice", settings.voice_volume], ["Music", settings.music_volume], ["SFX", settings.get("sfx_volume", 0.9)], ["Radio", settings.music_volume]]:
 		var i := AudioServer.get_bus_index(bus[0])
 		if i < 0:
 			AudioServer.add_bus()
@@ -184,6 +191,7 @@ func _setup_input() -> void:
 	_key("pause", [KEY_ESCAPE], [JOY_BUTTON_START])
 	_key("time_fast", [KEY_T])
 	_key("crouch", [KEY_C, KEY_CTRL], [JOY_BUTTON_RIGHT_STICK])
+	_key("horn", [KEY_H], [JOY_BUTTON_LEFT_STICK])
 	# gamepad eksenleri
 	for pair in [["move_left", JOY_AXIS_LEFT_X, -1.0], ["move_right", JOY_AXIS_LEFT_X, 1.0], ["move_forward", JOY_AXIS_LEFT_Y, -1.0], ["move_back", JOY_AXIS_LEFT_Y, 1.0], ["throttle", JOY_AXIS_TRIGGER_RIGHT, 1.0], ["brake", JOY_AXIS_TRIGGER_LEFT, 1.0]]:
 		if not InputMap.has_action(pair[0]):
@@ -205,6 +213,31 @@ func _process(delta: float) -> void:
 	if time_of_day >= 24.0:
 		time_of_day -= 24.0
 		day += 1
+
+
+func notify(text: String, secs := 4.0) -> void:
+	if hud and is_instance_valid(hud) and hud.has_method("notify"):
+		hud.notify(text, secs)
+
+
+func big_message(text: String, col := Color.WHITE) -> void:
+	if hud and is_instance_valid(hud) and hud.has_method("big_message"):
+		hud.big_message(text, col)
+
+
+func set_slowmo(ts: float) -> void:
+	base_ts = ts
+	Engine.time_scale = ts
+
+
+func hitstop(t: float) -> void:
+	## vuruş anında çok kısa duraklama (darbe hissi)
+	_hitstop += 1
+	var id := _hitstop
+	Engine.time_scale = base_ts * 0.08
+	get_tree().create_timer(t, true, false, true).timeout.connect(func():
+		if id == _hitstop:
+			Engine.time_scale = base_ts)
 
 
 func clock_text() -> String:

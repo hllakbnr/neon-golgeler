@@ -81,6 +81,7 @@ func segment(geoms: Array) -> Dictionary:
 				waist = r.y
 	_absorb(0.008 * tot)
 	_attach_loose()
+	_minifig(piv, cut)
 	# üçgen etiketleri (çoğunluk)
 	var TL := PackedByteArray()
 	TL.resize(T)
@@ -94,6 +95,8 @@ func segment(geoms: Array) -> Dictionary:
 		if not cut.has(L):
 			continue
 		var cc: Dictionary = cut[L]
+		if cc.has("mini"):
+			continue
 		var yt := -1e9
 		for i in n:
 			if lab[i] == L and Y[i] > yt:
@@ -564,6 +567,162 @@ func _attach_loose() -> void:
 				lab[v] = limb_l
 			moved += 1
 	info["loose_attached"] = moved
+
+
+func _components() -> Array:
+	## bağlı parçalar: [köşeler, alt köşe, üst köşe, alan]
+	var comp := PackedInt32Array()
+	comp.resize(n)
+	comp.fill(-1)
+	var out := []
+	for s in n:
+		if comp[s] >= 0:
+			continue
+		var id := out.size()
+		var verts := PackedInt32Array()
+		var lo := Vector3(INF, INF, INF)
+		var hi := Vector3(-INF, -INF, -INF)
+		var area := 0.0
+		var st := PackedInt32Array([s])
+		comp[s] = id
+		while st.size() > 0:
+			var v := st[st.size() - 1]
+			st.remove_at(st.size() - 1)
+			verts.append(v)
+			area += VA[v]
+			var p := Vector3(X[v], Y[v], Z[v])
+			lo = lo.min(p)
+			hi = hi.max(p)
+			for k in range(AP[v], AP[v + 1]):
+				var w := ADJ[k]
+				if comp[w] < 0:
+					comp[w] = id
+					st.append(w)
+		out.append([verts, lo, hi, area])
+	return out
+
+
+func _minifig(piv: Dictionary, cut: Dictionary) -> void:
+	## Oyuncak figür (minifig) düzeltmesi: kollar ve eller ayrı katı parçalardır.
+	## Kol parçası bütünüyle kola, ona değen küçük el parçası da aynı kola bağlanır (bacağa/kalçaya değil);
+	## omuz ekseni kol parçasının üst-iç bölgesine konur. Parçalar bölünmez, yırtılmaz.
+	var comps := _components()
+	if comps.size() < 6:
+		return
+	var ti := -1
+	var ta := 0.0
+	for i in comps.size():
+		var c: Array = comps[i]
+		var lo: Vector3 = c[1]
+		var hi: Vector3 = c[2]
+		var cy := (lo.y + hi.y) * 0.5
+		var cx := (lo.x + hi.x) * 0.5
+		if cy > 0.38 * H and cy < 0.82 * H and absf(cx) < 0.12 * H and float(c[3]) > ta:
+			ta = float(c[3])
+			ti = i
+	if ti < 0:
+		return
+	var tlo: Vector3 = comps[ti][1]
+	var thi: Vector3 = comps[ti][2]
+	var tcx := (tlo.x + thi.x) * 0.5
+	var thw := (thi.x - tlo.x) * 0.5
+	var arm := {1: -1, 2: -1}
+	var best := {1: -1.0, 2: -1.0}
+	for i in comps.size():
+		if i == ti:
+			continue
+		var c: Array = comps[i]
+		var lo: Vector3 = c[1]
+		var hi: Vector3 = c[2]
+		var cy := (lo.y + hi.y) * 0.5
+		var dx := (lo.x + hi.x) * 0.5 - tcx
+		if cy < tlo.y - 0.05 * H or cy > thi.y + 0.02 * H:
+			continue
+		if absf(dx) < thw * 0.55 or hi.y - lo.y < 0.07 * H or float(c[3]) > ta * 0.9:
+			continue
+		if lo.y > tlo.y + 0.5 * (thi.y - tlo.y):
+			continue      # omuzluk / yaka gibi üstte kalan aksesuar
+		var side := 1 if dx < 0.0 else 2
+		var score := (hi.y - lo.y) * float(c[3])
+		if score > float(best[side]):
+			best[side] = score
+			arm[side] = i
+	if int(arm[1]) < 0 or int(arm[2]) < 0:
+		return
+	# kola değen parçalar (ön kol, el, bileklik…) zincir hâlinde aynı kola katılır
+	var groups := {1: [int(arm[1])], 2: [int(arm[2])]}
+	var taken := {ti: true, int(arm[1]): true, int(arm[2]): true}
+	for _round in 4:
+		var added := false
+		for side in [1, 2]:
+			for j in comps.size():
+				if taken.has(j):
+					continue
+				var c: Array = comps[j]
+				var lo: Vector3 = c[1]
+				var hi: Vector3 = c[2]
+				var sz := hi - lo
+				var cxj := (lo.x + hi.x) * 0.5 - tcx
+				if maxf(sz.x, maxf(sz.y, sz.z)) > 0.25 * H or absf(cxj) < thw * 0.5 or (cxj < 0.0) != (side == 1):
+					continue
+				var acy: float = (comps[int(arm[side])][1].y + comps[int(arm[side])][2].y) * 0.5
+				if (lo.y + hi.y) * 0.5 < tlo.y - 0.12 * H or (lo.y + hi.y) * 0.5 > acy:
+					continue      # omuzluk gibi kolun üstündeki parçalar gövdede kalır
+				for gi in groups[side]:
+					var a: Array = comps[gi]
+					var alo: Vector3 = a[1]
+					var ahi: Vector3 = a[2]
+					var sep := maxf(maxf(maxf(alo.x - hi.x, lo.x - ahi.x), maxf(alo.y - hi.y, lo.y - ahi.y)), maxf(alo.z - hi.z, lo.z - ahi.z))
+					if sep < 0.025 * H:
+						(groups[side] as Array).append(j)
+						taken[j] = true
+						added = true
+						break
+		if not added:
+			break
+	# etiketler: eski kol etiketleri gövdeye, kol + el parçaları bütünüyle kola
+	for v in n:
+		if lab[v] == 1 or lab[v] == 2:
+			lab[v] = 0
+	for side in [1, 2]:
+		for ci in groups[side]:
+			for v: int in comps[ci][0]:
+				lab[v] = side
+	# omuz ekseni ve el noktası
+	for side in [1, 2]:
+		var a: Array = comps[int(arm[side])]
+		var alo: Vector3 = a[1]
+		var ahi: Vector3 = a[2]
+		var ah := ahi.y - alo.y
+		var sx := 0.0
+		var sz := 0.0
+		var k := 0
+		var inner := 1e9
+		var inner_x := 0.0
+		for v: int in a[0]:
+			if Y[v] > ahi.y - 0.3 * ah:
+				sx += X[v]
+				sz += Z[v]
+				k += 1
+				var d := absf(X[v] - tcx)
+				if d < inner:
+					inner = d
+					inner_x = X[v]
+		if k == 0:
+			continue
+		var pv := Vector3(lerpf(sx / k, inner_x, 0.5), ahi.y - 0.2 * ah, sz / k)
+		var hand := pv
+		var far := 0.0
+		for ci in groups[side]:
+			for v: int in comps[ci][0]:
+				var q := Vector3(X[v], Y[v], Z[v])
+				var d := q.distance_squared_to(pv)
+				if d > far:
+					far = d
+					hand = q
+		piv["armR" if side == 1 else "armL"] = {"p": pv, "h": hand}
+		cut[side] = {"mini": true}
+	info["minifig"] = [(groups[1] as Array).size(), (groups[2] as Array).size()]
 
 
 # ---------------------------------------------------------------- 5) bacaklar

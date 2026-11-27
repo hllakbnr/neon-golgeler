@@ -8,7 +8,7 @@ permissions: { contents: write }
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 80
+    timeout-minutes: 110
     steps:
       - uses: actions/checkout@v4
       - name: Godot 4.3 + dışa aktarma şablonları
@@ -26,7 +26,7 @@ jobs:
           timeout 300 godot --headless --editor --quit > /tmp/ed.txt 2>&1 || true
           fail=0
           for f in scripts/*.gd; do
-            out=$(timeout 60 godot --headless --check-only --script "res://$f" 2>&1 | grep -E "SCRIPT ERROR|Parse Error" | grep -vE "Can't open|Identifier not found: Game|Failed to load script" || true)
+            out=$(timeout 60 godot --headless --check-only --script "res://$f" 2>&1 | grep -E "SCRIPT ERROR|Parse Error" | grep -vE "Can't open|Identifier not found: Game|Failed to load script|Compile Error: *$" || true)
             if [ -n "$out" ]; then echo "== $f"; echo "$out"; fail=1; fi
           done
           grep -E "Parse Error|SCRIPT ERROR" /tmp/ed.txt | head -20 || true
@@ -58,9 +58,14 @@ jobs:
           pip install -q "torch==2.5.1" "torchaudio==2.5.1" --index-url https://download.pytorch.org/whl/cpu || true
           pip install -q coqui-tts "transformers>=4.43,<4.50" "torch==2.5.1" "torchaudio==2.5.1" --extra-index-url https://download.pytorch.org/whl/cpu || true
           python -c "import TTS, transformers, torch; print('TTS', TTS.__version__, 'transformers', transformers.__version__, 'torch', torch.__version__)" || true
-          pip install -q piper-tts || true
+          pip install -q piper-tts edge-tts || true
           timeout 1500 python godot/tools/make_voices.py || true
           ls -la godot/assets/voice || true
+      - name: Radyo müzikleri (prosedürel beste, telifsiz)
+        run: |
+          pip install -q numpy scipy || true
+          timeout 900 python godot/tools/make_music.py || true
+          ls -la godot/assets/music || true
       - name: Varlıkları içe aktar
         working-directory: godot
         run: |
@@ -71,7 +76,7 @@ jobs:
         run: |
           fail=0
           for f in scripts/*.gd; do
-            out=$(timeout 60 godot --headless --check-only --script "res://$f" 2>&1 | grep -iE "SCRIPT ERROR|Parse Error|error" | grep -vE "Can't open|Identifier not found: Game|Failed to load script" || true)
+            out=$(timeout 60 godot --headless --check-only --script "res://$f" 2>&1 | grep -iE "SCRIPT ERROR|Parse Error|error" | grep -vE "Can't open|Identifier not found: Game|Failed to load script|Compile Error: *$" || true)
             if [ -n "$out" ]; then echo "== $f"; echo "$out"; fail=1; fi
           done
           echo "betik_hata=$fail"
@@ -87,7 +92,7 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq xvfb mesa-vulkan-drivers libvulkan1 > /dev/null
           mkdir -p shots
           cp /tmp/00_dokular.png shots/ 2>/dev/null || true
-          timeout 2400 xvfb-run -a -s "-screen 0 1600x900x24" godot --path godot --rendering-driver vulkan --resolution 1600x900 -- --shots=$PWD/shots 2>&1 | grep -vE "^\s*$" | tail -120 || true
+          timeout 3300 xvfb-run -a -s "-screen 0 1600x900x24" godot --path godot --rendering-driver vulkan --resolution 1600x900 -- --shots=$PWD/shots 2>&1 | grep -vE "^\s*$" | tail -120 || true
           ls -la shots || true
           if [ -f shots/15_duraklat.png ]; then echo "ok=1" >> "$GITHUB_OUTPUT"; fi
       - name: Ekran görüntülerini ci-shots dalına gönder

@@ -1,8 +1,302 @@
 {
-  "intro": [
-    {"id": "ela_01", "who": "ela", "text": "Kaan, şehre hoş geldin. Neon gecesi başlamak üzere."},
-    {"id": "kaan_01", "who": "kaan", "text": "Ela? Bu şehir eskisinden çok daha parlak olmuş."},
-    {"id": "ela_02", "who": "ela", "text": "Merkezdeki kuleler gece yanınca her şey değişir. Bir araba bul, seni Eski Çarşı'da bekliyorum."},
-    {"id": "kaan_02", "who": "kaan", "text": "Tamam. Yoldayım."}
-  ]
+ "intro": [
+  {
+   "id": "ela_01",
+   "who": "ela",
+   "text": "Kaan, şehre hoş geldin. Neon gecesi başlamak üzere."
+  },
+  {
+   "id": "kaan_01",
+   "who": "kaan",
+   "text": "Ela? Bu şehir eskisinden çok daha parlak olmuş."
+  },
+  {
+   "id": "ela_02",
+   "who": "ela",
+   "text": "Merkezdeki kuleler gece yanınca her şey değişir. Bir araba bul, seni Eski Çarşı'da bekliyorum."
+  },
+  {
+   "id": "kaan_02",
+   "who": "kaan",
+   "text": "Tamam. Yoldayım."
+  }
+ ],
+ "tel_ela_1": [
+  {
+   "id": "tel_ela_1_1",
+   "who": "ela",
+   "text": "Kaan! Şehri dolaşıyor musun? Lunapark gece çok güzel oluyor."
+  },
+  {
+   "id": "tel_ela_1_2",
+   "who": "kaan",
+   "text": "Birazdan oraya uğrarım."
+  }
+ ],
+ "tel_ela_2": [
+  {
+   "id": "tel_ela_2_1",
+   "who": "ela",
+   "text": "Polisle başını derde sokma, tamam mı?"
+  },
+  {
+   "id": "tel_ela_2_2",
+   "who": "kaan",
+   "text": "Söz veremem ama deneyeceğim."
+  }
+ ],
+ "tel_ela_3": [
+  {
+   "id": "tel_ela_3_1",
+   "who": "ela",
+   "text": "Dağdaki manastıra çık. Bilge Usta seni görmek istiyor."
+  },
+  {
+   "id": "tel_ela_3_2",
+   "who": "kaan",
+   "text": "Merdivenleri saydım, bin tane var!"
+  }
+ ],
+ "tel_tarik_1": [
+  {
+   "id": "tel_tarik_1_1",
+   "who": "tarik",
+   "text": "Kaaan! Dojo seni bekliyor! Turbo Tarık'ın tekmesi efsanedir!"
+  },
+  {
+   "id": "tel_tarik_1_2",
+   "who": "kaan",
+   "text": "Geliyorum Tarık, geliyorum."
+  }
+ ],
+ "tel_tarik_2": [
+  {
+   "id": "tel_tarik_2_1",
+   "who": "tarik",
+   "text": "Yeni öğrenci indirimi var! Bir ders al, ikinci ders yarı fiyatına!"
+  },
+  {
+   "id": "tel_tarik_2_2",
+   "who": "kaan",
+   "text": "Çok cazip bir teklif."
+  }
+ ],
+ "tel_usta_1": [
+  {
+   "id": "tel_usta_1_1",
+   "who": "usta",
+   "text": "Kasırga senin içinde, Kaan. Önce dengeni bul."
+  },
+  {
+   "id": "tel_usta_1_2",
+   "who": "kaan",
+   "text": "Anladım, usta."
+  }
+ ],
+ "tel_usta_2": [
+  {
+   "id": "tel_usta_2_1",
+   "who": "usta",
+   "text": "Gücünü doğru kullan. Bu şehir sana bakıyor."
+  },
+  {
+   "id": "tel_usta_2_2",
+   "who": "kaan",
+   "text": "Unutmayacağım."
+  }
+ ],
+ "_barks": [
+  {
+   "id": "bark_korku_erkek_1",
+   "who": "erkek",
+   "text": "İmdat!"
+  },
+  {
+   "id": "bark_korku_erkek_2",
+   "who": "erkek",
+   "text": "Yardım edin!"
+  },
+  {
+   "id": "bark_korku_erkek_3",
+   "who": "erkek",
+   "text": "Delirmiş bu adam!"
+  },
+  {
+   "id": "bark_korku_kadin_1",
+   "who": "kadin",
+   "text": "İmdat! Biri yardım etsin!"
+  },
+  {
+   "id": "bark_korku_kadin_2",
+   "who": "kadin",
+   "text": "Uzak dur benden!"
+  },
+  {
+   "id": "bark_korku_kadin_3",
+   "who": "kadin",
+   "text": "Polis! Polis!"
+  },
+  {
+   "id": "bark_tehdit_erkek_1",
+   "who": "erkek",
+   "text": "Sen kime vurduğunu sanıyorsun?"
+  },
+  {
+   "id": "bark_tehdit_erkek_2",
+   "who": "erkek",
+   "text": "Gel bakalım, gel!"
+  },
+  {
+   "id": "bark_tehdit_erkek_3",
+   "who": "erkek",
+   "text": "Bunu ödeyeceksin!"
+  },
+  {
+   "id": "bark_tehdit_kadin_1",
+   "who": "kadin",
+   "text": "Bana dokunma!"
+  },
+  {
+   "id": "bark_tehdit_kadin_2",
+   "who": "kadin",
+   "text": "Hadi gel de görelim!"
+  },
+  {
+   "id": "bark_tehdit_kadin_3",
+   "who": "kadin",
+   "text": "Seni pişman edeceğim!"
+  },
+  {
+   "id": "bark_polis_erkek_1",
+   "who": "erkek",
+   "text": "Alo, polis mi? Burada biri saldırıyor!"
+  },
+  {
+   "id": "bark_polis_erkek_2",
+   "who": "erkek",
+   "text": "Polisi arıyorum, sakın kaçma!"
+  },
+  {
+   "id": "bark_polis_kadin_1",
+   "who": "kadin",
+   "text": "Alo, polis? Hemen gelin, kavga var!"
+  },
+  {
+   "id": "bark_polis_kadin_2",
+   "who": "kadin",
+   "text": "Ben polisi arıyorum!"
+  },
+  {
+   "id": "bark_dur_polis_1",
+   "who": "polis",
+   "text": "Dur! Polis!"
+  },
+  {
+   "id": "bark_dur_polis_2",
+   "who": "polis",
+   "text": "Kıpırdama! Ellerini göreyim!"
+  },
+  {
+   "id": "bark_dur_polis_3",
+   "who": "polis",
+   "text": "Yere yat, hemen!"
+  },
+  {
+   "id": "bark_dur_polis_4",
+   "who": "polis",
+   "text": "Kaçamazsın!"
+  },
+  {
+   "id": "bark_selam_erkek_1",
+   "who": "erkek",
+   "text": "Selam!"
+  },
+  {
+   "id": "bark_selam_erkek_2",
+   "who": "erkek",
+   "text": "Merhaba, iyi akşamlar."
+  },
+  {
+   "id": "bark_selam_erkek_3",
+   "who": "erkek",
+   "text": "Hey, nasılsın?"
+  },
+  {
+   "id": "bark_selam_kadin_1",
+   "who": "kadin",
+   "text": "Merhaba!"
+  },
+  {
+   "id": "bark_selam_kadin_2",
+   "who": "kadin",
+   "text": "Selam, iyi günler."
+  },
+  {
+   "id": "bark_selam_kadin_3",
+   "who": "kadin",
+   "text": "Oo, selam!"
+  }
+ ],
+ "_dj": [
+  {
+   "id": "dj_neonfm_1",
+   "who": "dj_m",
+   "text": "Neon FM, gecenin sesi. Gaza bas, şehir ışıkları seninle."
+  },
+  {
+   "id": "dj_neonfm_2",
+   "who": "dj_m",
+   "text": "Burası Neon FM. Neon Bulvar'dan selamlar, sıradaki parça geliyor."
+  },
+  {
+   "id": "dj_ritim_1",
+   "who": "dj_m",
+   "text": "Ritim doksan üç! Kafa sallamaya hazır mısın?"
+  },
+  {
+   "id": "dj_ritim_2",
+   "who": "dj_m",
+   "text": "Ritim doksan üçte sakin bir akşam. Bas ritmi, keyfine bak."
+  },
+  {
+   "id": "dj_kanyon_1",
+   "who": "dj_m",
+   "text": "Kızıl Kanyon Rock! Sesi aç, camları indir!"
+  },
+  {
+   "id": "dj_kanyon_2",
+   "who": "dj_m",
+   "text": "Rock asla ölmez. Kızıl Kanyon'dan herkese selam!"
+  },
+  {
+   "id": "dj_sakura_1",
+   "who": "dj_k",
+   "text": "Sakura Radyo. Huzurlu bir yolculuk dileriz."
+  },
+  {
+   "id": "dj_sakura_2",
+   "who": "dj_k",
+   "text": "Kiraz çiçeklerinin sesi, Sakura Radyo."
+  },
+  {
+   "id": "dj_cay_1",
+   "who": "dj_k",
+   "text": "Çay Ocağı FM. Çayınız demli, yolunuz açık olsun."
+  },
+  {
+   "id": "dj_cay_2",
+   "who": "dj_k",
+   "text": "Buyurun efendim, Çay Ocağı FM'desiniz."
+  },
+  {
+   "id": "dj_dalga_1",
+   "who": "dj_k",
+   "text": "Gece Dalgası. Derin bir nefes al, yol uzun."
+  },
+  {
+   "id": "dj_dalga_2",
+   "who": "dj_k",
+   "text": "Gece Dalgası ile sakin kal, şehir seninle."
+  }
+ ]
 }

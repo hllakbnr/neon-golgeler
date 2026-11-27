@@ -1,5 +1,7 @@
 extends Node3D
 class_name CharacterVisual
+
+signal rebuilt
 ## Karakter görseli + parça iskeleti + gerçekçi animasyonlar (AnimLib / UAL, CC0).
 ##  • Varsayılan: Kenney "Blocky Characters" (CC0) + kostüm dokusu (Kaan/Ela için özel)
 ##  • Admin bölümünden yüklenen modeller (Element Arenası'ndaki sistemle aynı mantık):
@@ -32,16 +34,21 @@ var own := {}                 # kendi animasyonlu modellerde eşleme
 var crouch := false
 var leg_len := 1.0
 var note := ""
+var lock_t := 0.0             # tek seferlik hareket (saldırı, darbe…) sürerken yürüme animasyonu karışmaz
+var _hand: Node3D = null      # sağ el soketi (silah buraya takılır)
 
 
 func setup(slot_id: String, skin := "") -> void:
 	slot = slot_id
+	rebuilt.emit.call_deferred()
 	# eski modeli hemen sahneden çıkar (animasyon/iskelet bir kare daha işlenmesin), sonra sil
 	if anim and is_instance_valid(anim):
 		anim.stop()
 		anim.active = false
 	anim = null
 	rig = null
+	_hand = null
+	lock_t = 0.0
 	for c in get_children():
 		remove_child(c)
 		c.queue_free()
@@ -466,6 +473,113 @@ func play_once(name: String, blend := 0.1, speed := 1.0) -> void:
 	play(name, blend, speed)
 
 
+func action(name: String, speed := 1.0, blend := 0.08, hold := -1.0) -> float:
+	## tek seferlik hareket: süresince set_motion devre dışı; süreyi döndürür
+	play_once(name, blend, speed)
+	var L := anim_length(name) / maxf(speed, 0.05)
+	lock_t = L if hold < 0.0 else hold
+	return L
+
+
+func _process(delta: float) -> void:
+	if lock_t > 0.0:
+		lock_t -= delta
+
+
+func tint(c: Color) -> void:
+	## özel modellerde kıyafet rengi: kumaş yüzeyleri boyanır, ten/yüz (oyuncak sarısı, ten rengi) korunur
+	for mi in find_children("*", "MeshInstance3D", true, false):
+		var m := mi as MeshInstance3D
+		if m.mesh == null or m.name == "el_soketi":
+			continue
+		for si in m.mesh.get_surface_count():
+			var base := m.get_surface_override_material(si)
+			if base == null:
+				base = m.mesh.surface_get_material(si)
+			if m.has_meta("orig_%d" % si):
+				base = m.get_meta("orig_%d" % si)
+			else:
+				m.set_meta("orig_%d" % si, base)
+			var sm := base as StandardMaterial3D
+			if sm == null:
+				continue
+			var a := sm.albedo_color
+			var skinlike := (a.h > 0.08 and a.h < 0.17 and a.s > 0.45 and a.v > 0.6) or (a.h < 0.1 and a.s > 0.2 and a.s < 0.6 and a.v > 0.7)
+			var grey := a.s < 0.12 and (a.v < 0.18 or a.v > 0.85)
+			if skinlike or (grey and sm.albedo_texture == null):
+				continue
+			var nm := sm.duplicate() as StandardMaterial3D
+			if sm.albedo_texture:
+				nm.albedo_color = c.lightened(0.35)
+			else:
+				var l := clampf(a.get_luminance() * 1.9, 0.3, 1.25)
+				nm.albedo_color = Color(c.r * l, c.g * l, c.b * l, a.a)
+			m.set_surface_override_material(si, nm)
+
+
+func hand_socket() -> Node3D:
+	## sağ el noktası: blok/parça modellerde kol pivotunun altı, iskeletli modellerde el kemiği
+	if _hand and is_instance_valid(_hand):
+		return _hand
+	_hand = Node3D.new()
+	_hand.name = "el_soketi"
+	var holder: Node3D = null
+	var skels := find_children("*", "Skeleton3D", true, false)
+	if (mode == "skinned" or mode == "own") and skels.size() > 0:
+		var sk := skels[0] as Skeleton3D
+		var best := -1
+		var re := RegEx.new()
+		re.compile("(?i)(hand.*(r|right)|(right|r)[^a-z]*hand|hand_r)")
+		for b in sk.get_bone_count():
+			var bn := sk.get_bone_name(b)
+			if re.search(bn) and not bn.to_lower().contains("finger") and not bn.to_lower().contains("thumb"):
+				best = b
+				break
+		if best >= 0:
+			var ba := BoneAttachment3D.new()
+			ba.bone_name = sk.get_bone_name(best)
+			sk.add_child(ba)
+			holder = ba
+			_hand.rotation = Vector3(PI * 0.5, 0, 0)
+	if holder == null:
+		var arm: Node3D = pivots.get("arm-right")
+		if arm == null:
+			holder = self
+			_hand.position = Vector3(-0.32, 0.95, 0.15)
+		else:
+			holder = arm
+			# kolun altındaki görünür parçaların alt ucu = el
+			var inv := arm.global_transform.affine_inverse()
+			var lo := Vector3(0, -0.8, 0)
+			var miny := 1e9
+			var sx := 0.0
+			var sz := 0.0
+			var k := 0
+			var meshes: Array = arm.find_children("*", "MeshInstance3D", true, false)
+			if arm is MeshInstance3D:
+				meshes.append(arm)
+			for mi in meshes:
+				var m := mi as MeshInstance3D
+				if m.mesh == null or m.name == "el_soketi":
+					continue
+				var ab := m.get_aabb()
+				for c in 8:
+					var q: Vector3 = inv * (m.global_transform * ab.get_endpoint(c))
+					if q.y < miny:
+						miny = q.y
+					sx += q.x
+					sz += q.z
+					k += 1
+			if k > 0:
+				lo = Vector3(sx / k, miny + 0.12 * absf(miny), sz / k)
+			_hand.position = lo
+	holder.add_child(_hand)
+	var gs := _hand.global_transform.basis.get_scale()
+	if gs.x > 0.0001:
+		_hand.scale = Vector3(1.0 / gs.x, 1.0 / gs.y, 1.0 / gs.z)
+	return _hand
+
+
 func has_anim(name: String) -> bool:
 	return anim != null and anim.has_animation(prefix + name)
 
@@ -476,6 +590,8 @@ func anim_length(name: String) -> float:
 
 
 func set_motion(speed: float, on_ground := true) -> void:
+	if lock_t > 0.0:
+		return
 	var k := 1.0 if mode == "skinned" else 0.75
 	if not on_ground:
 		play("jump", 0.2)

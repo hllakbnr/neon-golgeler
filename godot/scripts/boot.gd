@@ -100,7 +100,11 @@ func _process(delta: float) -> void:
 
 
 const SPAWN := Vector3(-88.5, 0.4, -36.0)
+const PEDS := 130
+const TRAFFIC_N := 46
 var dialog: DialogBox
+var wanted: Wanted
+var radio: Radio
 
 
 func _start_game() -> void:
@@ -144,7 +148,7 @@ func _start_game() -> void:
 				nodes.append(Vector2i(x, y))
 	nodes.shuffle()
 	var dirs := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
-	for i in range(mini(34, nodes.size())):
+	for i in range(mini(TRAFFIC_N, nodes.size())):
 		var a: Vector2i = nodes[i]
 		dirs.shuffle()
 		var to := a
@@ -161,22 +165,31 @@ func _start_game() -> void:
 		world.add_child(t)
 	ld.step(0.65, "Sokaklar doluyor")
 	await get_tree().process_frame
+	wanted = Wanted.new()
+	wanted.player = player
+	wanted.world = world
+	add_child(wanted)
+	radio = Radio.new()
+	radio.player = player
+	add_child(radio)
 	# yayalar
 	var yaya_slots := []
 	for k in Game.SLOTS.keys():
 		if String(k).begins_with("yaya"):
 			yaya_slots.append(k)
-	for i in range(80):
+	for i in range(PEDS):
 		var r: Rect2 = world.blocks[(i * 7) % world.blocks.size()]
 		var loop := world.sidewalk_loop(r)
 		var n := Pedestrian.new()
-		n.slot = "polis" if i % 11 == 5 else yaya_slots[i % yaya_slots.size()]
+		n.world = world
+		n.slot = "polis" if i % 13 == 5 else yaya_slots[i % yaya_slots.size()]
+		n.role = "police" if i % 13 == 5 else "civ"
 		n.path = loop if i % 2 == 0 else [loop[0], loop[3], loop[2], loop[1]]
 		n.idx = randi() % loop.size()
 		world.add_child(n)
 		n.global_position = loop[n.idx].lerp(loop[(n.idx + 1) % loop.size()], randf())
 		if i % 12 == 11:
-			ld.step(0.65 + i * 0.003, "Sokaklar doluyor")
+			ld.step(0.65 + i * 0.0018, "Sokaklar doluyor")
 			await get_tree().process_frame
 	ld.step(0.88, "Işıklar yakılıyor")
 	hud = HUD.new()
@@ -375,6 +388,95 @@ func _build_test() -> void:
 	print("OYUNCU ", player.global_position, " bölge=", world.district_name(player.global_position))
 	var r := world.route(player.global_position, Vector3(180, 0, -1000))
 	print("ROTA nokta=", r.size())
+	# dövüş / aranma / eşya kırma denemesi
+	for id in Weapons.ORDER:
+		player.combat.equip(id)
+	player.combat.equip("katana")
+	var ped: Pedestrian = null
+	var bd := 1e9
+	for n in get_tree().get_nodes_in_group("people"):
+		var d := (n as Node3D).global_position.distance_to(player.global_position)
+		if d < bd:
+			bd = d
+			ped = n
+	if ped:
+		player.global_position = ped.global_position + Vector3(1.0, 0.3, 0)
+		player.visual.rotation.y = atan2(-1.0, 0.0)
+		for k in range(6):
+			player.combat.busy = 0.0
+			player.combat._attack(k == 5)
+			for j in range(45):
+				await get_tree().physics_frame
+		print("DOVUS yaya can=%.0f durum=%d yildiz=%d" % [ped.health, ped.state, wanted.stars])
+	wanted._raise(3, player.global_position)
+	for j in range(240):
+		await get_tree().physics_frame
+	print("POLIS yaya=%d araba=%d yildiz=%d" % [get_tree().get_nodes_in_group("police").size(), wanted.cars.size(), wanted.stars])
+	var b0: Dictionary = world.breakables[0]
+	var okp := world.hit_props(Vector3(b0.pos.x, b0.pos.y + 1.0, b0.pos.z), 1.0, Vector3(5, 0, 0))
+	for j in range(30):
+		await get_tree().physics_frame
+	print("ESYA kirildi=", okp, " tur=", b0.kind, " parca=", world.breaker.debris.size())
+	player.combat.take_hit(500.0, player.global_position + Vector3(1, 0, 0), true, null)
+	await get_tree().create_timer(5.0).timeout
+	print("YENIDEN can=%.0f konum=%s yildiz=%d" % [player.combat.health, player.global_position, wanted.stars])
+	# iç mekânlar + dükkân
+	for d in world.doors:
+		if String(d.interior) == "atolye":
+			continue
+		player.global_position = (d.pos as Vector3) + Vector3(0, 0.3, 0)
+		await get_tree().physics_frame
+		var pr: String = world.door_prompt(player.global_position)
+		var ok := world.try_door(player)
+		await get_tree().create_timer(1.2).timeout
+		var ins := world.interiors.current
+		player.global_position = world.interiors.built[ins].counter if ins != "" else player.global_position
+		await get_tree().physics_frame
+		var pr2: String = world.door_prompt(player.global_position)
+		if ins != "":
+			world.try_door(player)
+			await get_tree().process_frame
+			for n in get_children():
+				if n is ShopUI:
+					(n as ShopUI)._buy()
+					(n as ShopUI)._close()
+			player.global_position = world.interiors.built[ins].door
+			world.try_door(player)
+			await get_tree().create_timer(1.2).timeout
+		print("KAPI %s istem='%s' girdi=%s ic='%s' tezgah='%s' para=%d" % [d.interior, pr, ok, ins, pr2, Game.money])
+	# telefon, radyo, kıyafet, güçler, ejderha
+	player.global_position = SPAWN
+	await get_tree().physics_frame
+	var ph := Phone.new()
+	ph.player = player
+	player.phone = ph
+	add_child(ph)
+	for app in ["kisiler", "mesaj", "yolculuk", "banka", "radyo", "neongram", "gardirop"]:
+		ph._open(app)
+		await get_tree().process_frame
+		ph._back()
+	ph.close()
+	radio.select("neonfm")
+	print("RADYO istasyon=", radio.station)
+	Outfits.apply(player, "ates")
+	await get_tree().process_frame
+	print("KIYAFET ", Game.outfit)
+	player.powers._spin_start()
+	for j in range(60):
+		await get_tree().physics_frame
+	print("KASIRGA kalan=%.1f" % player.powers.spin_t)
+	player.combat.stamina = 100.0
+	player.powers.elem_cd = 0.0
+	player.powers._element()
+	await get_tree().create_timer(1.5).timeout
+	player.powers._summon()
+	for j in range(120):
+		await get_tree().physics_frame
+	print("EJDERHA binildi=%s y=%.1f" % [player.mount != null, player.global_position.y])
+	player.powers.dragon.dismiss()
+	for j in range(60):
+		await get_tree().physics_frame
+	print("EJDERHA indi=%s" % [player.mount == null])
 	var mp := open_map()
 	await get_tree().process_frame
 	mp.queue_free()
@@ -557,6 +659,126 @@ func _run_shots() -> void:
 	await _wait(20)
 	print("ARAZI oyuncu_y=", player.global_position.y, " arazi_y=", world.terrain_h(player.global_position.x, player.global_position.z))
 	await Game.shot("25_arazi")
+	# dövüş: katana, yaya karşılık veriyor; aranma yıldızları; silah çarkı; etkileşim menüsü
+	_set_time(18.2)
+	player.global_position = Vector3(-88.5, 0.3, -52.0)
+	player.yaw = PI + 0.7
+	player.visual.rotation.y = 0.0
+	var foe := Pedestrian.new()
+	foe.world = world
+	foe.slot = "yaya3"
+	foe.path = world.sidewalk_loop(world.blocks[0])
+	world.add_child(foe)
+	foe.global_position = Vector3(-88.5, 0.18, -50.4)
+	foe.brave = true
+	foe.threat = player
+	foe.hostile = true
+	foe.state = Pedestrian.S.FIGHT
+	player.combat.equip("katana")
+	_player_cam()
+	await _wait(12)
+	player.combat.busy = 0.0
+	player.combat._attack(false)
+	await _wait(9)
+	await Game.shot("36_dovus")
+	wanted._raise(3, player.global_position)
+	await _wait(40)
+	await Game.shot("37_aranma")
+	Input.action_press("weapon_wheel")
+	player.combat._open_wheel()
+	await _wait(10)
+	await Game.shot("38_silah_carki")
+	Input.action_release("weapon_wheel")
+	await _wait(4)
+	wanted.clear()
+	Game.set_slowmo(1.0)
+	if is_instance_valid(foe):
+		foe._set_walk()
+		foe.global_position = player.global_position + Vector3(1.4, 0, 0)
+		var tm := TalkMenu.new()
+		tm.player = player
+		tm.ped = foe
+		player.talk = tm
+		add_child(tm)
+		await _wait(8)
+		await Game.shot("39_etkilesim")
+		tm._close()
+	# güçler: kasırga, ejderha
+	player.combat.stamina = 100.0
+	player.powers._spin_start()
+	await _wait(16)
+	await Game.shot("40_kasirga")
+	player.powers._spin_end()
+	await _wait(6)
+	player.powers._summon()
+	await _wait(5)
+	player.pitch = -0.25
+	player.yaw = PI + 0.4
+	for j in range(40):
+		Input.action_press("move_forward")
+		await get_tree().process_frame
+	Input.action_release("move_forward")
+	await Game.shot("41_ejderha")
+	player.powers.dragon.dismiss()
+	await _wait(10)
+	player.global_position = SPAWN
+	player.velocity = Vector3.ZERO
+	await _wait(10)
+	# telefon
+	var ph := Phone.new()
+	ph.player = player
+	player.phone = ph
+	add_child(ph)
+	await _wait(8)
+	await Game.shot("42_telefon")
+	ph._open("neongram")
+	await _wait(4)
+	await Game.shot("43_telefon_neongram")
+	ph.close()
+	await _wait(8)
+	# dükkân ve kulüp iç mekânları
+	for d in world.doors:
+		if String(d.interior) in ["restoran", "kulup", "silah"]:
+			player.global_position = (d.pos as Vector3) + Vector3(0, 0.3, 0)
+			await _wait(2)
+			world.try_door(player)
+			await _wait(14)
+			var ins: String = world.interiors.current
+			if ins != "":
+				player.global_position = world.interiors.built[ins].counter + Vector3(0, 0, -2.5)
+				player.yaw = PI
+				await _wait(8)
+				await Game.shot("44_ic_" + ins)
+				if ins == "restoran":
+					world.try_door(player)
+					player.global_position = world.interiors.built[ins].counter
+					world.try_door(player)
+					await _wait(8)
+					await Game.shot("45_dukkan_menusu")
+					for n in get_children():
+						if n is ShopUI:
+							(n as ShopUI)._close()
+				player.global_position = world.interiors.built[ins].door
+				world.try_door(player)
+				await _wait(14)
+	# radyo çarkı (araçta)
+	var car0: Car = null
+	for c in get_tree().get_nodes_in_group("cars"):
+		car0 = c
+		break
+	if car0:
+		player.global_position = car0.global_position + Vector3(1.5, 0.3, 0)
+		await _wait(3)
+		player._try_enter()
+		await _wait(10)
+		Input.action_press("radio")
+		radio._open_wheel()
+		await _wait(10)
+		await Game.shot("46_radyo_carki")
+		Input.action_release("radio")
+		await _wait(4)
+		player.exit_car()
+		await _wait(10)
 	_player_cam()
 	_pause()
 	await _wait(10)

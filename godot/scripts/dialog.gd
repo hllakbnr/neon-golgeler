@@ -5,7 +5,8 @@ class_name DialogBox
 
 signal finished
 
-const NAMES := {"kaan": ["KAAN", Color(1.0, 0.55, 0.15)], "ela": ["ELA", Color(0.3, 0.95, 0.95)], "polis": ["POLİS", Color(0.5, 0.65, 1.0)]}
+const NAMES := {"kaan": ["KAAN", Color(1.0, 0.55, 0.15)], "ela": ["ELA", Color(0.3, 0.95, 0.95)], "polis": ["POLİS", Color(0.5, 0.65, 1.0)], "yaya": ["YAYA", Color(0.92, 0.92, 0.92)],
+	"tarik": ["TURBO TARIK", Color(1.0, 0.6, 0.15)], "usta": ["BİLGE USTA", Color(1.0, 0.85, 0.4)]}
 
 var queue: Array = []
 var player: AudioStreamPlayer

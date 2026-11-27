@@ -234,8 +234,8 @@ func _environment() -> void:
 	env.set_glow_level(3, 0.8)
 	env.set_glow_level(5, 0.5)
 	env.fog_enabled = true
-	env.fog_density = 0.00032
-	env.fog_aerial_perspective = 0.3
+	env.fog_density = 0.00022
+	env.fog_aerial_perspective = 0.2
 	env.fog_sky_affect = 0.12
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 1.12
@@ -347,6 +347,8 @@ func _process(delta: float) -> void:
 	_move_train(delta)
 	if city:
 		city.tick(delta)
+	if breaker:
+		breaker.tick(delta)
 	_shadow_t -= delta
 	if _shadow_t <= 0.0 and night > 0.35:
 		_shadow_t = 0.6
@@ -718,7 +720,9 @@ func _move_train(delta: float) -> void:
 		var a: Array = rail_point(_train_s - k * 13.2)
 		var car: Node3D = train[k]
 		car.position = a[0] + Vector3(0, 0.5, 0)
-		car.look_at(car.position + a[1], Vector3.UP)
+		var dv: Vector3 = a[1]
+		if dv.length() > 0.001 and absf(dv.normalized().y) < 0.98:
+			car.look_at(car.position + dv, Vector3.UP)
 
 
 # ---------------------------------------------------------------- yaya / trafik yardımcıları
@@ -734,6 +738,60 @@ func sidewalk_loop(r: Rect2) -> Array:
 	var c := r.get_center()
 	var hwid := r.size.x * 0.5 - 2.6
 	return [Vector3(c.x - hwid, 0.18, c.y - hwid), Vector3(c.x + hwid, 0.18, c.y - hwid), Vector3(c.x + hwid, 0.18, c.y + hwid), Vector3(c.x - hwid, 0.18, c.y + hwid)]
+
+
+func city_floor(p: Vector3) -> float:
+	## şehirde kaldırım 0,18 m, yol 0
+	if not in_city(p):
+		return ground_y(p.x, p.z)
+	var dx := absf(p.x - roundf(p.x / CELL) * CELL)
+	var dz := absf(p.z - roundf(p.z / CELL) * CELL)
+	return 0.0 if (dx < ROAD_W * 0.5 or dz < ROAD_W * 0.5) else 0.18
+
+
+func poi_pos(id: String) -> Vector3:
+	for p in pois:
+		if p.id == id:
+			return p.pos
+	return Vector3(-88.5, 0, -36.0)
+
+
+func respawn_point(kind: String) -> Vector3:
+	## yer işaretine (hastane, karakol…) en yakın kavşağın köşesindeki kaldırım
+	var pos := poi_pos(kind)
+	var n := astar.get_closest_point(Vector3(pos.x, 0, pos.z))
+	var rp := astar.get_point_position(n) if n >= 0 else pos
+	var d := pos - rp
+	var off := Vector3(signf(d.x) if absf(d.x) > 0.1 else 1.0, 0, signf(d.z) if absf(d.z) > 0.1 else 1.0)
+	return rp + off * (ROAD_W * 0.5 + 2.5) + Vector3(0, 0.4, 0)
+
+
+var breaker: PropBreaker
+var interiors: Interiors
+
+
+func try_door(pl: Player) -> bool:
+	if interiors == null:
+		interiors = Interiors.new()
+		interiors.world = self
+		add_child(interiors)
+	return interiors.try_use(pl)
+
+
+func door_prompt(p: Vector3, in_car := false) -> String:
+	if interiors == null:
+		if nearest_door(p, 7.0 if in_car else 2.6).is_empty():
+			return ""
+		interiors = Interiors.new()
+		interiors.world = self
+		add_child(interiors)
+	return interiors.prompt(p, in_car)
+
+
+func hit_props(center: Vector3, radius: float, impulse: Vector3) -> bool:
+	if breaker == null:
+		breaker = PropBreaker.new(self)
+	return breaker.hit(center, radius, impulse)
 
 
 func node_ok(n: Vector2i) -> bool:

@@ -55,6 +55,15 @@ func _ready() -> void:
 	ver.offset_left = 56
 	ver.offset_top = -34
 	add_child(ver)
+	var cred := Game.styled_label("Emeği geçenler: dokular Poly Haven (CC0) · karakter/araç modelleri ve animasyonlar Kenney, Quaternius (CC0) · yazı tipleri Google Fonts (OFL) · kasırga efekti modeli 'Spinjitzu (green)', AAV's 3D Models (Sketchfab), CC BY 4.0; renkleri oyunda değiştirildi · müzikler oyun için prosedürel bestelendi", 12, Color(1, 1, 1, 0.3))
+	cred.anchor_top = 1.0
+	cred.anchor_bottom = 1.0
+	cred.anchor_right = 1.0
+	cred.offset_left = 600
+	cred.offset_right = -30
+	cred.offset_top = -52
+	cred.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	add_child(cred)
 	settings_ui = SettingsUI.new()
 	settings_ui.visible = false
 	settings_ui.closed.connect(func(): settings_ui.visible = false; _focus_first())

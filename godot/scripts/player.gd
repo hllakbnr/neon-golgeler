@@ -27,6 +27,11 @@ var _shake := 0.0
 var _safe := Vector3.ZERO        # son güvenli kara noktası (denize düşünce geri dönülür)
 var _safe_car := Transform3D()
 var _safe_t := 0.0
+var combat: Combat
+var talk: TalkMenu = null
+var phone: Phone = null
+var powers: Powers
+var mount: Dragon = null
 
 
 func _ready() -> void:
@@ -44,6 +49,13 @@ func _ready() -> void:
 	visual = CharacterVisual.new()
 	add_child(visual)
 	visual.setup("kaan", Game.slot_default_skin("kaan"))
+	combat = Combat.new(self)
+	combat.name = "Dovus"
+	add_child(combat)
+	visual.rebuilt.connect(combat.refresh_model)
+	powers = Powers.new(self)
+	powers.name = "Gucler"
+	add_child(powers)
 	# kamera düzeni
 	rig = Node3D.new()
 	yaw_node = Node3D.new()
@@ -90,7 +102,24 @@ func _physics_process(delta: float) -> void:
 	if abs(ry) > 0.15:
 		pitch = clamp(pitch - ry * 2.0 * delta * Game.settings.sens, -1.1, 0.6)
 	_safe_t -= delta
+	if controls and not Game.paused and phone == null and not combat.dead and Input.is_action_just_pressed("phone"):
+		phone = Phone.new()
+		phone.player = self
+		get_parent().add_child(phone)
+	if mount and is_instance_valid(mount):
+		combat.tick(delta, false)
+		powers.tick(delta)
+		global_position = mount.seat()
+		velocity = Vector3.ZERO
+		visual.global_rotation = Vector3(0, mount.yaw, 0)
+		visual.play("sit", 0.2)
+		visual.lock_t = 0.1
+		var dk: float = clampf(mount.speed / 40.0, 0.0, 1.0)
+		_follow_cam(delta, mount.global_position + Vector3(0, 2.2, 0), lerpf(9.0, 12.0, dk), 0.0)
+		cam.fov = lerp(cam.fov, Game.settings.fov + 12.0 * dk, delta * 2.0)
+		return
 	if car:
+		combat.tick(delta, false)
 		if car.global_position.y < World.SEA - 1.0:
 			_rescue_car()
 		elif _safe_t <= 0.0 and car.global_position.y > World.SEA + 0.6 and car.global_transform.basis.y.y > 0.85:
@@ -103,9 +132,13 @@ func _physics_process(delta: float) -> void:
 		cam.fov = lerp(cam.fov, Game.settings.fov + 8.0 * spd_k, delta * 2.0)
 		if controls and Input.is_action_just_pressed("vehicle"):
 			exit_car()
+		elif controls and Input.is_action_just_pressed("interact") and world:
+			world.try_door(self)
 		return
+	combat.tick(delta, true)
+	powers.tick(delta)
 	var input := Vector2.ZERO
-	if controls and not Game.paused:
+	if controls and not Game.paused and not combat.dead:
 		input = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var basis := Basis(Vector3.UP, yaw)
 	var dir := (basis * Vector3(input.x, 0, input.y))
@@ -118,13 +151,18 @@ func _physics_process(delta: float) -> void:
 	if controls and Input.is_action_pressed("sprint"):
 		top = SPRINT
 		visual.crouch = false
-	var want: Vector3 = dir * top * minf(1.0, input.length())
+	if combat.locked() and not Input.is_action_pressed("sprint"):
+		top = minf(top, JOG)
+	if powers.spinning():
+		top = 9.0
+		visual.crouch = false
+	var want: Vector3 = dir * top * minf(1.0, input.length()) * combat.move_scale() + combat.lunge_velocity()
 	var acc := 14.0 if is_on_floor() else 4.0
 	velocity.x = move_toward(velocity.x, want.x, acc * delta * max(top, 4.0))
 	velocity.z = move_toward(velocity.z, want.z, acc * delta * max(top, 4.0))
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
-	elif controls and Input.is_action_just_pressed("jump"):
+	elif controls and not combat.dead and combat.busy <= 0.0 and Input.is_action_just_pressed("jump"):
 		velocity.y = JUMP
 	move_and_slide()
 	if global_position.y < World.SEA - 1.4 and _safe != Vector3.ZERO:
@@ -134,16 +172,25 @@ func _physics_process(delta: float) -> void:
 		_safe_t = 1.0
 		_safe = global_position
 	var hs := Vector2(velocity.x, velocity.z).length()
-	if hs > 0.2:
+	if combat.locked():
+		# hedefe kilitli: karakter hedefe bakar, kamera yavaşça hedefe döner
+		var rel := combat.target.global_position - global_position
+		var ta := atan2(rel.x, rel.z)
+		visual.rotation.y = lerp_angle(visual.rotation.y, ta, min(1.0, delta * 12.0))
+		yaw = lerp_angle(yaw, ta + PI, min(1.0, delta * 3.0))
+	elif hs > 0.2 and combat.busy <= 0.0 and not combat.blocking and not combat.dead:
 		var target := atan2(velocity.x, velocity.z)
 		visual.rotation.y = lerp_angle(visual.rotation.y, target, min(1.0, delta * 10.0))
-	visual.set_motion(hs, is_on_floor())
+	if not combat.dead:
+		visual.set_motion(hs, is_on_floor())
 	# koşarken kamera biraz geri çekilir, FOV açılır
 	var sprinting := hs > 6.0
 	_follow_cam(delta, global_position + Vector3(0, 1.55, 0), 3.6 if sprinting else 3.1, 0.55)
 	cam.fov = lerp(cam.fov, Game.settings.fov + (6.0 if sprinting else 0.0), delta * 4.0)
-	if controls and Input.is_action_just_pressed("vehicle"):
+	if controls and not combat.dead and combat.busy <= 0.0 and Input.is_action_just_pressed("vehicle"):
 		_try_enter()
+	if controls and not combat.dead and talk == null and Input.is_action_just_pressed("interact"):
+		_try_interact()
 
 
 func _follow_cam(delta: float, target: Vector3, dist: float, offset: float) -> void:
@@ -225,13 +272,74 @@ func _rescue_car() -> void:
 	car.angular_velocity = Vector3.ZERO
 
 
+func _talk_target() -> Pedestrian:
+	var fwd := Vector3(sin(visual.rotation.y), 0, cos(visual.rotation.y))
+	var best: Pedestrian = null
+	var bd := 2.6
+	for g in ["people", "police"]:
+		for n in get_tree().get_nodes_in_group(g):
+			var pd := n as Pedestrian
+			if pd == null or pd.is_down() or pd.state == Pedestrian.S.FIGHT or pd.state == Pedestrian.S.FLEE:
+				continue
+			var rel := pd.global_position - global_position
+			rel.y = 0.0
+			var d := rel.length()
+			if d < bd and (d < 1.0 or fwd.dot(rel / d) > 0.1):
+				bd = d
+				best = pd
+	return best
+
+
+func _try_interact() -> void:
+	var w := world
+	if w and w.has_method("try_door") and w.try_door(self):
+		return
+	var pd := _talk_target()
+	if pd:
+		talk = TalkMenu.new()
+		talk.player = self
+		talk.ped = pd
+		get_parent().add_child(talk)
+
+
 func prompt_text() -> String:
 	if car:
-		return "[F] İn"
+		var cp: String = world.door_prompt(global_position, true) if world else ""
+		return ("[F] İn   " + cp) if cp != "" else "[F] İn"
+	if combat.dead:
+		return ""
+	if world and world.has_method("door_prompt"):
+		var dp: String = world.door_prompt(global_position)
+		if dp != "":
+			return dp
+	if talk == null and _talk_target():
+		return "[E] Etkileşim"
 	for c in get_tree().get_nodes_in_group("cars"):
 		if (c as Node3D).global_position.distance_to(global_position) < 3.8:
 			return "[F] Araca bin"
 	return ""
+
+
+func take_hit(dmg: float, from: Vector3, heavy: bool, attacker: Node = null, stun_t := 0.0) -> void:
+	if car:
+		return
+	combat.take_hit(dmg, from, heavy, attacker, stun_t)
+
+
+func is_down() -> bool:
+	return combat.dead
+
+
+func dismount() -> void:
+	if mount == null:
+		return
+	var m := mount
+	mount = null
+	global_position = m.global_position + Vector3(0, -1.0, 0)
+	velocity = m.vel * 0.3
+	visual.rotation = Vector3(0, m.yaw, 0)
+	visual.lock_t = 0.0
+	powers.air_used = false
 
 
 func shake(t := 0.3) -> void:

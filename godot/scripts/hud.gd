@@ -22,10 +22,16 @@ var bars_box: HBoxContainer
 var health_bar: ProgressBar
 var armor_bar: ProgressBar
 var stars: Control
+var stamina_bar: ProgressBar
+var weapon_l: Label
+var big: Label
+var _big_t := 0.0
+var overlay: Control
 
 
 func _ready() -> void:
 	layer = 5
+	Game.hud = self
 	minimap = Control.new()
 	minimap.position = Vector2(28, 0)
 	minimap.size = Vector2(330, 210)
@@ -64,6 +70,27 @@ func _ready() -> void:
 		else:
 			armor_bar = pb
 	bars_box = bars
+	stamina_bar = ProgressBar.new()
+	stamina_bar.show_percentage = false
+	stamina_bar.anchor_top = 1.0
+	stamina_bar.anchor_bottom = 1.0
+	stamina_bar.offset_left = 28
+	stamina_bar.offset_right = 358
+	stamina_bar.offset_top = -29
+	stamina_bar.offset_bottom = -25
+	var sfg := StyleBoxFlat.new()
+	sfg.bg_color = Color(1.0, 0.8, 0.25)
+	var sbg := StyleBoxFlat.new()
+	sbg.bg_color = Color(0, 0, 0, 0.4)
+	stamina_bar.add_theme_stylebox_override("fill", sfg)
+	stamina_bar.add_theme_stylebox_override("background", sbg)
+	add_child(stamina_bar)
+	overlay = Control.new()
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.draw.connect(_draw_overlay)
+	add_child(overlay)
+	move_child(overlay, 0)
 	clock = Game.styled_label("", 30, Color.WHITE, true)
 	clock.anchor_left = 1.0
 	clock.anchor_right = 1.0
@@ -91,7 +118,31 @@ func _ready() -> void:
 	stars.offset_right = -30
 	stars.offset_top = 100
 	stars.offset_bottom = 136
+	stars.draw.connect(_draw_stars)
 	add_child(stars)
+	weapon_l = Game.styled_label("", 24, Color.WHITE, true)
+	weapon_l.anchor_left = 1.0
+	weapon_l.anchor_right = 1.0
+	weapon_l.offset_left = -420
+	weapon_l.offset_right = -30
+	weapon_l.offset_top = 140
+	weapon_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	weapon_l.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+	weapon_l.add_theme_constant_override("shadow_offset_x", 2)
+	weapon_l.add_theme_constant_override("shadow_offset_y", 2)
+	add_child(weapon_l)
+	big = Game.styled_label("", 120, Color.WHITE, true)
+	big.set_anchors_preset(Control.PRESET_CENTER)
+	big.offset_left = -700
+	big.offset_right = 700
+	big.offset_top = -90
+	big.offset_bottom = 60
+	big.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	big.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+	big.add_theme_constant_override("shadow_offset_x", 4)
+	big.add_theme_constant_override("shadow_offset_y", 4)
+	big.modulate.a = 0.0
+	add_child(big)
 	help_box = Label.new()
 	help_box.position = Vector2(28, 28)
 	help_box.size = Vector2(420, 0)
@@ -170,9 +221,31 @@ func notify(text: String, secs := 4.0) -> void:
 	_help_t = secs
 
 
+func big_message(text: String, col: Color) -> void:
+	big.text = text
+	big.add_theme_color_override("font_color", col)
+	_big_t = 4.2
+
+
 func _process(_d: float) -> void:
 	if player == null:
 		return
+	_big_t -= _d
+	big.modulate.a = clampf(minf(4.2 - _big_t, _big_t) * 2.0, 0.0, 1.0) if _big_t > 0.0 else 0.0
+	if player.combat:
+		var cb := player.combat
+		health_bar.value = cb.health
+		armor_bar.value = cb.armor
+		armor_bar.modulate.a = 1.0 if cb.armor > 0.0 else 0.35
+		stamina_bar.value = cb.stamina
+		stamina_bar.modulate.a = 1.0 if cb.stamina < 99.0 else 0.25
+		var w := Weapons.info(cb.weapon)
+		var am := ""
+		if String(w.kind) == "throw":
+			am = "  ×%d" % int(cb.ammo.get(cb.weapon, 0))
+		weapon_l.text = ("%s%s" % [String(w.name).to_upper(), am]) if not player.car else ""
+	stars.queue_redraw()
+	overlay.queue_redraw()
 	_area_check -= _d
 	if _area_check <= 0.0 and world:
 		_area_check = 0.5
@@ -234,6 +307,34 @@ func _draw_map() -> void:
 		var cp: Vector2 = xf * Vector2((car as Node3D).global_position.x, (car as Node3D).global_position.z)
 		if Rect2(Vector2.ZERO, sz).has_point(cp) and car != player.car:
 			minimap.draw_circle(cp, 3.2, Color(0.3, 0.7, 1.0))
+	# aranma: arama bölgesi, polisler, tanıklar
+	var wt := Wanted.inst
+	if wt and wt.stars > 0 and not wt.seen:
+		var sc_c: Vector2 = xf * Vector2(wt.last_seen.x, wt.last_seen.z)
+		var col := Color(0.3, 0.5, 1.0, 0.22) if int(wt.flash * 2.0) % 2 == 0 else Color(1.0, 0.25, 0.3, 0.22)
+		minimap.draw_circle(sc_c, wt.search_r * sc, col)
+		minimap.draw_arc(sc_c, wt.search_r * sc, 0, TAU, 64, Color(col, 0.7), 2.0)
+	for o in get_tree().get_nodes_in_group("police"):
+		var op: Vector2 = xf * Vector2((o as Node3D).global_position.x, (o as Node3D).global_position.z)
+		if Rect2(Vector2.ZERO, sz).has_point(op) and not (o as Pedestrian).is_down():
+			var blink := int(Time.get_ticks_msec() / 250) % 2 == 0
+			minimap.draw_circle(op, 3.6, (Color(1, 0.2, 0.25) if blink else Color(0.3, 0.5, 1.0)) if (wt and wt.stars > 0) else Color(0.4, 0.55, 1.0, 0.8))
+	for o in get_tree().get_nodes_in_group("traffic"):
+		var tc := o as TrafficCar
+		if tc and tc.pursuit:
+			var op: Vector2 = xf * Vector2(tc.global_position.x, tc.global_position.z)
+			if Rect2(Vector2.ZERO, sz).has_point(op):
+				minimap.draw_rect(Rect2(op - Vector2(4, 4), Vector2(8, 8)), Color(1, 0.2, 0.25) if int(Time.get_ticks_msec() / 200) % 2 == 0 else Color(0.3, 0.5, 1.0))
+	for o in get_tree().get_nodes_in_group("people"):
+		var pd := o as Pedestrian
+		if pd == null:
+			continue
+		if pd.state == Pedestrian.S.CALL or pd.hostile:
+			var op: Vector2 = xf * Vector2(pd.global_position.x, pd.global_position.z)
+			if Rect2(Vector2.ZERO, sz).has_point(op):
+				minimap.draw_circle(op, 4.0, Color(1, 0.15, 0.2))
+				if pd.state == Pedestrian.S.CALL:
+					minimap.draw_arc(op, 7.0, 0, TAU, 16, Color(1, 0.9, 0.3), 1.5)
 	MapPainter.draw_player(minimap, center, 0.0, 9.0)
 	# kuzey işareti
 	var north: Vector2 = center + Vector2(0, -1).rotated(player.yaw) * (minf(sz.x, sz.y) * 0.5 - 12.0)
@@ -242,3 +343,70 @@ func _draw_map() -> void:
 	if Game.font_display:
 		minimap.draw_string(Game.font_display, north + Vector2(-9, 5), "K", HORIZONTAL_ALIGNMENT_CENTER, 18, 14, Color.WHITE)
 	minimap.draw_rect(Rect2(Vector2.ZERO, sz), Color(0, 0, 0, 0.7), false, 3.0)
+
+
+func _star_pts(c: Vector2, r: float) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for k in 10:
+		var a := -PI * 0.5 + k * PI / 5.0
+		pts.append(c + Vector2(cos(a), sin(a)) * (r if k % 2 == 0 else r * 0.45))
+	return pts
+
+
+func _draw_stars() -> void:
+	var wt := Wanted.inst
+	if wt == null:
+		return
+	var n := 6
+	var w := stars.size.x
+	for i in n:
+		var c := Vector2(w - 18.0 - (n - 1 - i) * 40.0, 18.0)
+		var pts := _star_pts(c, 16.0)
+		var on := i < wt.stars
+		if on:
+			var a := 1.0 if wt.seen else (0.35 + 0.65 * absf(sin(wt.flash * 4.0)))
+			stars.draw_colored_polygon(pts, Color(1, 1, 1, a))
+		elif wt.stars > 0:
+			var closed := pts.duplicate()
+			closed.append(pts[0])
+			stars.draw_polyline(closed, Color(1, 1, 1, 0.35), 1.5)
+	if wt.stars > 0 and not wt.seen:
+		var ep := wt.evade_progress()
+		stars.draw_rect(Rect2(Vector2(w - 238.0, 40.0), Vector2(220.0, 3.0)), Color(0, 0, 0, 0.4))
+		stars.draw_rect(Rect2(Vector2(w - 238.0, 40.0), Vector2(220.0 * ep, 3.0)), Color(0.4, 0.8, 1.0))
+
+
+func _draw_overlay() -> void:
+	## 3B noktalara bağlı ekran işaretleri (havada yazı değil, arayüz simgeleri)
+	var cam := get_viewport().get_camera_3d()
+	if cam == null or player == null:
+		return
+	var cb := player.combat
+	if cb and cb.target and is_instance_valid(cb.target):
+		var tp := cb.target.global_position + Vector3(0, 2.15, 0)
+		if not cam.is_position_behind(tp):
+			var sp := cam.unproject_position(tp)
+			var col := Color(1, 0.25, 0.3) if cb.locked() else Color(1, 1, 1, 0.55)
+			overlay.draw_colored_polygon(PackedVector2Array([sp + Vector2(-9, -12), sp + Vector2(9, -12), sp + Vector2(0, 0)]), col)
+			var ped := cb.target as Pedestrian
+			if ped and cb.locked():
+				var hp := clampf(ped.health / ped.max_health, 0.0, 1.0)
+				overlay.draw_rect(Rect2(sp + Vector2(-30, -24), Vector2(60, 5)), Color(0, 0, 0, 0.6))
+				overlay.draw_rect(Rect2(sp + Vector2(-30, -24), Vector2(60 * hp, 5)), Color(0.9, 0.25, 0.25))
+	for o in get_tree().get_nodes_in_group("people"):
+		var pd := o as Pedestrian
+		if pd == null or pd.state != Pedestrian.S.CALL:
+			continue
+		var tp := pd.global_position + Vector3(0, 2.3, 0)
+		if cam.is_position_behind(tp) or cam.global_position.distance_to(tp) > 60.0:
+			continue
+		var sp := cam.unproject_position(tp)
+		overlay.draw_circle(sp, 13.0, Color(0.9, 0.15, 0.2, 0.9))
+		overlay.draw_rect(Rect2(sp + Vector2(-4, -7), Vector2(8, 14)), Color.WHITE)
+		overlay.draw_arc(sp, 16.0, -PI * 0.5, -PI * 0.5 + TAU * (1.0 - clampf(pd.call_t / 7.0, 0.0, 1.0)), 24, Color(1, 0.9, 0.3), 3.0)
+	var wt := Wanted.inst
+	if wt and wt.arrest_progress() > 0.01:
+		var c := overlay.size * 0.5 + Vector2(0, 80)
+		overlay.draw_arc(c, 26.0, -PI * 0.5, -PI * 0.5 + TAU * wt.arrest_progress(), 32, Color(0.4, 0.6, 1.0), 5.0)
+		if Game.font_ui:
+			overlay.draw_string(Game.font_ui, c + Vector2(-120, 52), "Tutuklanıyorsun — kaç ya da karşı koy!", HORIZONTAL_ALIGNMENT_CENTER, 240, 16, Color.WHITE)
