@@ -20,6 +20,17 @@ jobs:
           mkdir -p ~/.local/share/godot/export_templates/4.3.stable /tmp/tpl
           unzip -q Godot_v4.3-stable_export_templates.tpz -d /tmp/tpl
           mv /tmp/tpl/templates/* ~/.local/share/godot/export_templates/4.3.stable/
+      - name: Hızlı betik denetimi (hata varsa hemen dur)
+        working-directory: godot
+        run: |
+          timeout 300 godot --headless --editor --quit > /tmp/ed.txt 2>&1 || true
+          fail=0
+          for f in scripts/*.gd; do
+            out=$(timeout 60 godot --headless --check-only --script "res://$f" 2>&1 | grep -E "SCRIPT ERROR|Parse Error" | grep -vE "Can't open|Identifier not found: Game|Failed to load script" || true)
+            if [ -n "$out" ]; then echo "== $f"; echo "$out"; fail=1; fi
+          done
+          grep -E "Parse Error|SCRIPT ERROR" /tmp/ed.txt | head -20 || true
+          if [ "$fail" = "1" ]; then echo "Betik hatası var, derleme durduruldu"; exit 1; fi
       - name: Ücretsiz varlıkları indir (Poly Haven CC0, Kenney CC0, Google Fonts OFL)
         run: |
           pip install -q pillow || true
@@ -28,6 +39,8 @@ jobs:
         run: |
           echo "${{ github.run_number }}" > godot/version.txt
           cat godot/version.txt
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
       - uses: actions/cache@v4
         with:
           path: ~/.local/share/tts
@@ -37,10 +50,11 @@ jobs:
         run: |
           sudo apt-get update -qq > /dev/null || true
           sudo apt-get install -y -qq ffmpeg > /dev/null || true
-          pip install -q torch torchaudio --index-url https://download.pytorch.org/whl/cpu || true
-          pip install -q "coqui-tts[codec]" || true
+          pip install -q "torch==2.5.1" "torchaudio==2.5.1" --index-url https://download.pytorch.org/whl/cpu || true
+          pip install -q coqui-tts "transformers>=4.43,<4.50" "torch==2.5.1" "torchaudio==2.5.1" --extra-index-url https://download.pytorch.org/whl/cpu || true
+          python -c "import TTS, transformers, torch; print('TTS', TTS.__version__, 'transformers', transformers.__version__, 'torch', torch.__version__)" || true
           pip install -q piper-tts || true
-          timeout 1500 python3 godot/tools/make_voices.py || true
+          timeout 1500 python godot/tools/make_voices.py || true
           ls -la godot/assets/voice || true
       - name: Varlıkları içe aktar
         working-directory: godot

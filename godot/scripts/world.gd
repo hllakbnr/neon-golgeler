@@ -1297,7 +1297,7 @@ func _coast() -> void:
 	# ana halatlar (zincir eğrisi) + askı çubukları
 	var span_pts := [Vector2(BRIDGE_X0 + 30.0, dh + 1.2), Vector2(towers[0], top), Vector2(towers[1], top), Vector2(BRIDGE_X1 - 30.0, dh + 1.2)]
 	for sd in [-1, 1]:
-		var zc := sd * 7.4
+		var zc: float = sd * 7.4
 		for seg in range(3):
 			var a2: Vector2 = span_pts[seg]
 			var b2: Vector2 = span_pts[seg + 1]
