@@ -211,6 +211,37 @@ func _resume() -> void:
 
 
 # ---------------------------------------------------------------- CI ekran görüntüleri
+func _make_test_minifig(path: String) -> bool:
+	## tek yüzeyli, iskeletsiz, oyuncak figür benzeri test modeli üretip glb olarak yazar
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var parts := [[Vector3(-0.245, 0.5, 0), Vector3(0.45, 1.0, 0.5)], [Vector3(0.245, 0.5, 0), Vector3(0.45, 1.0, 0.5)],
+		[Vector3(0, 1.125, 0), Vector3(0.96, 0.25, 0.5)], [Vector3(0, 1.62, 0), Vector3(0.9, 0.75, 0.45)],
+		[Vector3(-0.6, 1.62, 0), Vector3(0.24, 0.7, 0.3)], [Vector3(0.6, 1.62, 0), Vector3(0.24, 0.7, 0.3)],
+		[Vector3(-0.6, 1.17, 0.02), Vector3(0.2, 0.2, 0.2)], [Vector3(0.6, 1.17, 0.02), Vector3(0.2, 0.2, 0.2)],
+		[Vector3(0, 2.05, 0), Vector3(0.3, 0.1, 0.3)], [Vector3(0, 2.35, 0), Vector3(0.6, 0.5, 0.6)]]
+	for p in parts:
+		var bm := BoxMesh.new()
+		bm.size = p[1]
+		st.append_from(bm, 0, Transform3D(Basis(), p[0]))
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.95, 0.8, 0.2)
+	mi.material_override = mat
+	var root := Node3D.new()
+	root.add_child(mi)
+	mi.owner = root
+	var doc := GLTFDocument.new()
+	var gs := GLTFState.new()
+	if doc.append_from_scene(root, gs) != OK:
+		root.free()
+		return false
+	var err := doc.write_to_filesystem(gs, path)
+	root.free()
+	return err == OK
+
+
 func _wait(n: int) -> void:
 	for i in range(n):
 		await get_tree().process_frame
@@ -328,6 +359,15 @@ func _run_shots() -> void:
 	_free_cam(Vector3(-World.EDGE + 10, 14, 30), Vector3(-World.EDGE - 60, 2, 150))
 	await _wait(18)
 	await Game.shot("21_liman")
+	# arazi çarpışması: oyuncu tepede yürüyebiliyor mu
+	_set_time(13.0)
+	var tp := Vector3(60, world.terrain_h(60, -430) + 1.5, -430)
+	player.global_position = tp
+	player.velocity = Vector3.ZERO
+	_player_cam()
+	await _wait(20)
+	print("ARAZI oyuncu_y=", player.global_position.y, " arazi_y=", world.terrain_h(player.global_position.x, player.global_position.z))
+	await Game.shot("25_arazi")
 	_player_cam()
 	_pause()
 	await _wait(10)
@@ -346,6 +386,19 @@ func _run_shots() -> void:
 		await _wait(12)
 		await Game.shot("17_ozel_model_yumruk")
 		Game.admin.slots.erase("yaya1")
+	# iskeletsiz tek parça "minifig" testi (Element Arenası parçalama sistemi)
+	var mf := "user://test_minifig.glb"
+	if _make_test_minifig(mf):
+		Game.admin.slots["yaya2"] = {"type": "glb", "path": mf}
+		ap.list.select(4)
+		ap._select("yaya2")
+		await _wait(20)
+		print("MINIFIG mod=", ap.preview.mode, " not=", ap.preview.note)
+		await Game.shot("26_minifig_yuru")
+		ap.preview.play_once("punch_cross", 0.1)
+		await _wait(10)
+		await Game.shot("27_minifig_yumruk")
+		Game.admin.slots.erase("yaya2")
 	ap.queue_free()
 	await _wait(5)
 	await Game.shot("15_duraklat")
