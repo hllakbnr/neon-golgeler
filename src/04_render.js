@@ -3,6 +3,7 @@
 // ============================================================================
 const SHARED_UNI = { uNight: { value: 0 }, uWet: { value: 0 }, uTime: { value: 0 } };
 const Render = {
+  draw() { if (this.composer) this.composer.render(); else Game.renderer.render(Game.scene, Game.camera); },
   init() {
     const canvas = $('gl');
     const q = Settings.quality;
@@ -16,7 +17,7 @@ const Render = {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.15, Settings.viewDist + 200);
-    scene.fog = new THREE.Fog(0x1a0a33, 60, Settings.viewDist);
+    scene.fog = new THREE.FogExp2(0x1a0a33, 1.75 / Settings.viewDist);
     // Ortam yansıması (parlak ABS plastik için)
     const pmrem = new THREE.PMREMGenerator(renderer);
     scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture;
@@ -24,16 +25,26 @@ const Render = {
     const hemi = new THREE.HemisphereLight(0xbfd8ff, 0x302040, 0.8);
     const sun = new THREE.DirectionalLight(0xffffff, 2.2);
     sun.castShadow = !!Settings.shadows;
-    const sm = q === 'high' ? 2048 : 1024;
+    const sm = q === 'high' ? 4096 : q === 'medium' ? 2048 : 1024;
     sun.shadow.mapSize.set(sm, sm);
-    const sc = sun.shadow.camera; sc.left = -55; sc.right = 55; sc.top = 55; sc.bottom = -55; sc.near = 1; sc.far = 260;
+    const sc = sun.shadow.camera, ext = q === 'low' ? 45 : 85; sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext; sc.near = 1; sc.far = 360; this.shadowExt = ext; this.shadowRes = sm;
     sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.04;
     scene.add(hemi, sun, sun.target);
     Object.assign(Game, { renderer, scene, camera });
     this.hemi = hemi; this.sun = sun;
     this.buildSky();
     Rain.init(); FX.init(); LightPool.init();
-    addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+    // Neon parlaması (bloom) — yüksek/orta kalite
+    if (Settings.bloom && q !== 'low') {
+      try {
+        const comp = new EffectComposer(renderer);
+        comp.addPass(new RenderPass(scene, camera));
+        this.bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.6, 0.45, 0.82);
+        comp.addPass(this.bloom); comp.addPass(new OutputPass());
+        this.composer = comp;
+      } catch (e) { console.warn('Bloom kapalı', e); }
+    }
+    addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); this.composer && this.composer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
   },
   buildSky() {
     const geo = new THREE.SphereGeometry(1, 24, 12);
@@ -67,7 +78,7 @@ const Mat = {
     const key = 'p' + color + (o.rough ?? '') + (o.metal ?? '') + (o.em ?? '') + (o.tr ?? '');
     let m = this.cache.get(key);
     if (!m) {
-      m = new THREE.MeshStandardMaterial({ color, roughness: o.rough ?? 0.3, metalness: o.metal ?? 0.0, envMapIntensity: 0.9 });
+      m = new THREE.MeshPhysicalMaterial({ color, roughness: o.rough ?? 0.3, metalness: o.metal ?? 0.0, envMapIntensity: 0.9, clearcoat: o.tr || Settings.quality === 'low' ? 0 : 0.5, clearcoatRoughness: 0.2 });
       if (o.em) { m.emissive = new THREE.Color(o.em); m.emissiveIntensity = o.emi ?? 1.2; }
       if (o.tr) { m.transparent = true; m.opacity = o.tr; m.depthWrite = false; }
       this.cache.set(key, m);
@@ -166,6 +177,7 @@ const Geo = {
   boxB: (() => { const g = new THREE.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; })(), // tabanı y=0
   cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 14),
   cylLo: new THREE.CylinderGeometry(0.5, 0.5, 1, 8),
+  rbox: new RoundedBoxGeometry(1, 1, 1, 2, 0.14),
   cone: new THREE.ConeGeometry(0.5, 1, 4),
   sphere: new THREE.SphereGeometry(0.5, 12, 8),
   plane: new THREE.PlaneGeometry(1, 1),
@@ -226,12 +238,14 @@ const Sky = {
     Render.skyMat.uniforms.top.value.copy(top); Render.skyMat.uniforms.hor.value.copy(hor);
     Render.skyMat.uniforms.sunCol.value.copy(sunC); Render.skyMat.uniforms.cloud.value = this.cloud;
     const sd = new THREE.Vector3(sx * 0.8, sy, 0.45).normalize();
-    // Gece "ay" yönü ışığı: Vice City morumsu ay ışığı
+    // Gece "ay" yönü ışığı: 80ler neon gecesi morumsu ay ışığı
     const lightDir = sy > -0.05 ? sd : new THREE.Vector3(-sx * 0.6, Math.max(0.3, -sy), -0.4).normalize();
     Render.skyMat.uniforms.sunDir.value.copy(sd);
     const p = Game.player ? Game.player.pos : _v1.set(0, 0, 0);
-    Render.sun.position.set(p.x + lightDir.x * 120, p.y + lightDir.y * 120, p.z + lightDir.z * 120);
-    Render.sun.target.position.copy(p);
+    // gölge kamerası oyuncuyu takip eder; texel'e hizalanır (titreme olmaz)
+    const tx = (Render.shadowExt * 2) / Render.shadowRes, sx2 = Math.round(p.x / tx) * tx, sz2 = Math.round(p.z / tx) * tx;
+    Render.sun.position.set(sx2 + lightDir.x * 150, p.y + lightDir.y * 150, sz2 + lightDir.z * 150);
+    Render.sun.target.position.set(sx2, p.y, sz2);
     Render.sun.color.copy(sy > -0.05 ? sunC : new THREE.Color(0x8a7cff));
     Render.sun.intensity = (sy > -0.05 ? lerp(0.4, 2.6, day) : 0.55) * (1 - this.cloud * 0.55);
     Render.hemi.intensity = this.sample(h, 4) * (1 - this.cloud * 0.25) + 0.15;
@@ -240,8 +254,8 @@ const Sky = {
     Game.renderer.toneMappingExposure = lerp(1.25, 1.0, day);
     const fogC = hor.clone().lerp(new THREE.Color(0x101018), 0.35);
     Game.scene.fog.color.copy(fogC);
-    Game.scene.fog.near = lerp(60, 25, this.rainAmt);
-    Game.scene.fog.far = lerp(Settings.viewDist, Settings.viewDist * 0.55, this.rainAmt);
+    Game.scene.fog.density = (1.75 / Settings.viewDist) * (1 + this.rainAmt * 0.9 + this.cloud * 0.2);
+    if (Render.bloom) Render.bloom.strength = lerp(0.25, 0.75, SHARED_UNI.uNight.value) + Sky.wet * 0.1;
     Render.sky.position.copy(Game.camera.position);
     // Fırtına şimşeği
     if (w === 'storm') {

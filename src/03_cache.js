@@ -81,6 +81,33 @@ function normalizeModel(root, targetH = 2.0) {
   wrap.add(root);
   return wrap;
 }
+function normalizeVehicle(root, targetLen) {
+  root.updateMatrixWorld(true);
+  const b = new THREE.Box3().setFromObject(root), sz = b.getSize(new THREE.Vector3());
+  const wrap = new THREE.Group(), inner = new THREE.Group(); inner.add(root); wrap.add(inner);
+  if (sz.x > sz.z) inner.rotation.y = Math.PI / 2;               // uzun eksen ileri (+z) olsun
+  const s = targetLen / Math.max(sz.x, sz.z, 0.001); inner.scale.setScalar(s);
+  wrap.updateMatrixWorld(true);
+  const b2 = new THREE.Box3().setFromObject(inner), c = b2.getCenter(new THREE.Vector3());
+  inner.position.set(-c.x, -b2.min.y, -c.z);
+  return wrap;
+}
+// Hazır GLB kütüphanesi: CORS açık kaynaklar (aynalar sırayla denenir). Admin panelinden
+// kendi URL'lerini (Kenney / Quaternius vb. .glb) aynı slotlara atayabilirsin.
+const LIB_VERSION = 'lib-r160-1';
+const LIB_BASES = ['https://raw.githubusercontent.com/mrdoob/three.js/r160/examples/models/gltf/', 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/models/gltf/', 'https://threejs.org/examples/models/gltf/'];
+const LIBRARY = {
+  lib_human: { file: 'Xbot.glb', kind: 'char', label: 'İnsan (iskeletli, Idle/Walk/Run)' },
+  lib_soldier: { file: 'Soldier.glb', kind: 'char', label: 'Muhafız/Polis (iskeletli)' },
+  lib_robot: { file: 'RobotExpressive/RobotExpressive.glb', kind: 'char', label: 'Robot muhafız (Idle/Walk/Run/Jump/Punch)' },
+  lib_car: { file: 'ferrari.glb', kind: 'vehicle', label: 'Spor araba (DRACO)' },
+  lib_tree: { file: null, kind: 'prop', label: 'Ağaç (.glb URL ata)', urls: [] },
+  lib_lamp: { file: null, kind: 'prop', label: 'Sokak lambası (.glb URL ata)', urls: [] },
+  lib_bench: { file: null, kind: 'prop', label: 'Bank (.glb URL ata)', urls: [] }
+};
+// Karakter kod adı → kütüphane modeli
+const CAST_LIB = { Elite: 'lib_robot', Boss_Architect: 'lib_robot', Police: 'lib_soldier', Guard: 'lib_soldier' };
+const castLibSlot = (castId) => CAST_LIB[castId] || 'lib_human';
 function autoRig(wrap, cachedMeta) {
   wrap.updateMatrixWorld(true);
   const found = {};
@@ -145,7 +172,7 @@ const AssetManager = {
     return n;
   },
   async loadAll(progress) {
-    const entries = Object.values(this.manifest);
+    const entries = Object.values(this.manifest).filter(e => e.source !== 'library');
     let i = 0;
     for (const e of entries) {
       try { await this.loadOne(e.id); } catch (err) { console.warn('Varlık yüklenemedi', e.id, err); this.status[e.slot] = 'error'; }
@@ -157,10 +184,18 @@ const AssetManager = {
     if (!force && rec && rec.blob && rec.version === entry.version && rec.updatedAt === entry.updatedAt) {
       return { blob: rec.blob, meta: rec.rigMeta || null, from: 'cache' };
     }
-    if (!entry.url) { if (rec && rec.blob) return { blob: rec.blob, meta: rec.rigMeta, from: 'cache' }; throw new Error('Kaynak yok'); }
-    const r = await fetch(entry.url, { cache: 'no-store' });
-    if (!r.ok) throw new Error('İndirme hatası ' + r.status);
-    const blob = await r.blob();
+    const urls = entry.urls || (entry.url ? [entry.url] : []);
+    if (!urls.length) { if (rec && rec.blob) return { blob: rec.blob, meta: rec.rigMeta, from: 'cache' }; throw new Error('Kaynak yok'); }
+    let blob = null, lastErr = null;
+    for (const u of urls) {
+      try {
+        const ac = new AbortController(); const to = setTimeout(() => ac.abort(), entry.kind === 'texture' ? 15000 : 45000);
+        const r = await fetch(u, { cache: 'no-store', signal: ac.signal, mode: 'cors' }); clearTimeout(to);
+        if (!r.ok) throw new Error('İndirme hatası ' + r.status);
+        blob = await r.blob(); if (blob.size < 64) throw new Error('Boş dosya'); break;
+      } catch (e) { lastErr = e; }
+    }
+    if (!blob) { if (rec && rec.blob) return { blob: rec.blob, meta: rec.rigMeta, from: 'cache' }; throw lastErr || new Error('İndirilemedi'); }
     await AssetCache.put({ id: entry.id, slot: entry.slot, kind: entry.kind, fmt: entry.fmt, version: entry.version, updatedAt: entry.updatedAt, blob, size: blob.size, rigMeta: null, savedAt: Date.now() });
     return { blob, meta: null, from: 'download' };
   },
@@ -175,27 +210,58 @@ const AssetManager = {
       Bus.emit('textureLoaded', e.slot);
       return;
     }
-    let obj;
+    let obj, clips = [];
     if (e.fmt === 'obj') {
       obj = (this.obj ||= new OBJLoader()).parse(await blob.text());
     } else {
       const buf = await blob.arrayBuffer();
-      obj = await new Promise((res, rej) => (this.gltf ||= new GLTFLoader()).parse(buf, '', g => res(g.scene), rej));
+      const g = await new Promise((res, rej) => this.gltfLoader().parse(buf, '', res, rej));
+      obj = g.scene; clips = g.animations || [];
     }
-    const isVeh = e.slot.startsWith('veh_');
-    const wrap = normalizeModel(obj, isVeh ? (VEHICLES[e.slot.slice(4)]?.h || 1.5) : 2.0 * (CAST[e.slot]?.look?.scale || 1));
-    if (!isVeh) {
+    let skinned = false; obj.traverse(n => { if (n.isSkinnedMesh) skinned = true; if (n.isMesh) { n.castShadow = true; n.receiveShadow = true; n.frustumCulled = !n.isSkinnedMesh; } });
+    const isVeh = e.slot.startsWith('veh_') || e.vehicle;
+    const libVeh = LIBRARY[e.slot]?.kind === 'vehicle';
+    let wrap;
+    if (isVeh || libVeh) wrap = normalizeVehicle(obj, libVeh ? 4.5 : (VEHICLES[e.slot.slice(4)]?.len || 4.4));
+    else wrap = normalizeModel(obj, 2.0 * (CAST[e.slot]?.look?.scale || 1));
+    if (!isVeh && !libVeh && !skinned) {
       const rig = autoRig(wrap, meta);
       if (!meta) { const rec = await AssetCache.get(e.id); if (rec) { rec.rigMeta = rig.meta; await AssetCache.put(rec); } }
     }
-    wrap.userData.custom = true;
+    wrap.userData.custom = true; wrap.userData.skinned = skinned; wrap.userData.clips = clips;
     this.templates[e.slot] = wrap; this.status[e.slot] = from;
     Bus.emit('modelLoaded', e.slot);
   },
+  gltfLoader() {
+    if (this.gltf) return this.gltf;
+    const l = new GLTFLoader();
+    try {
+      const d = new DRACOLoader();
+      d.setDecoderPath(window.NG_LOCAL_VENDOR ? './vendor/addons/libs/draco/gltf/' : 'https://unpkg.com/three@0.160.0/examples/jsm/libs/draco/gltf/');
+      l.setDRACOLoader(d);
+    } catch (e) { console.warn('DRACO kullanılamıyor', e); }
+    return this.gltf = l;
+  },
   instance(slot) {
     const t = this.templates[slot]; if (!t) return null;
-    const c = t.clone(true);
+    const c = t.userData.skinned ? skeletonClone(t) : t.clone(true);
+    c.userData.clips = t.userData.clips; c.userData.skinned = t.userData.skinned;
     return c;
+  },
+  // ---------------------------------------------------------- hazır model kütüphanesi (internet)
+  async loadLibrary(progress) {
+    if (Settings.modelMode !== 'library') return;
+    const keys = Object.keys(LIBRARY); let i = 0;
+    await Promise.all(keys.map(async (k) => {
+      const L = LIBRARY[k];
+      if (this.manifest[k] && this.manifest[k].source !== 'library') { i++; return; } // kullanıcı kendi modelini atadı
+      if (!L.file && !(L.urls && L.urls.length)) { i++; return; }
+      const urls = L.urls || LIB_BASES.map(b => b + L.file);
+      this.manifest[k] = { id: k, slot: k, kind: 'model', fmt: 'glb', urls, version: L.ver || LIB_VERSION, updatedAt: LIB_VERSION, source: 'library', name: L.label };
+      try { await this.loadOne(k); } catch (e) { console.warn('Kütüphane modeli yüklenemedi (yedek kullanılacak):', k, e.message); this.status[k] = 'error'; }
+      progress && progress(++i / keys.length);
+    }));
+    this.saveManifest();
   },
   async addLocalFile(slot, file) {
     const fmt = (file.name.split('.').pop() || 'glb').toLowerCase();

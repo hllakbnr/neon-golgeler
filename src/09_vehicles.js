@@ -14,10 +14,11 @@ class Vehicle {
     this.mesh = this.build(); Game.scene.add(this.mesh); Game.vehicles.push(this);
   }
   build() {
-    const g = new THREE.Group(), d = this.def, body = Mat.plastic(this.color, { rough: 0.22 }), dark = Mat.plastic('#141418'), glass = Mat.plastic('#1a2a4a', { rough: 0.05, metal: 0.4 });
-    const tpl = AssetManager.instance('veh_' + this.type);
-    const B = (m, w, h, l, x, y, z) => { const b = new THREE.Mesh(Geo.box, m); b.scale.set(w, h, l); b.position.set(x, y, z); b.castShadow = true; g.add(b); return b; };
     this.bodyMeshes = [];
+    const g = new THREE.Group(), d = this.def, body = Mat.plastic(this.color, { rough: 0.22 }), dark = Mat.plastic('#141418'), glass = Mat.plastic('#1a2a4a', { rough: 0.05, metal: 0.4 });
+    const tpl = AssetManager.instance('veh_' + this.type) || (this.type === 'sport' && Settings.modelMode === 'library' ? AssetManager.instance('lib_car') : null);
+    if (tpl) tpl.traverse(n => { if (n.isMesh && /body|paint|car_?body/i.test(n.name)) { n.material = new THREE.MeshPhysicalMaterial({ color: this.color, metalness: 0.6, roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.05 }); this.bodyMeshes.push(n); } });
+    const B = (m, w, h, l, x, y, z) => { const b = new THREE.Mesh(Geo.rbox, m); b.scale.set(w, h, l); b.position.set(x, y, z); b.castShadow = true; b.receiveShadow = true; g.add(b); return b; };
     if (tpl) { g.add(tpl); }
     else if (d.kind === 'bike') {
       this.bodyMeshes.push(B(body, 0.5, 0.45, 1.6, 0, 0.75, 0), B(body, 0.4, 0.3, 0.6, 0, 1.05, 0.55), B(dark, 0.5, 0.25, 0.8, 0, 1.0, -0.3));
@@ -40,7 +41,7 @@ class Vehicle {
     g.position.copy(this.pos); g.rotation.y = this.yaw;
     return g;
   }
-  repaint(c) { this.color = c; const m = Mat.plastic(c, { rough: 0.22 }); for (const b of this.bodyMeshes) b.material = m; }
+  repaint(c) { this.color = c; const m = Mat.plastic(c, { rough: 0.22 }); for (const b of this.bodyMeshes) { if (b.material.clearcoat === 1) b.material.color.set(c); else b.material = m; } }
   maxSpeed() { return this.def.max * (1 + 0.12 * this.mods.speed); }
   grip() { return this.def.grip * (1 + 0.15 * this.mods.grip) * (1 - Sky.wet * 0.25); }
   remove() { Game.scene.remove(this.mesh); const i = Game.vehicles.indexOf(this); if (i >= 0) Game.vehicles.splice(i, 1); this.removed = true; }
@@ -96,7 +97,7 @@ class Vehicle {
       const lf = dx * fwd.x + dz * fwd.z, lr = dx * fwd.z - dz * fwd.x;
       if (Math.abs(lf) < d.len / 2 + 0.4 && Math.abs(lr) < d.wid / 2 + 0.4) {
         if (this.driver && SIDE[this.driver.team] === 'hero' && SIDE[a.team] === 'hero') continue;
-        a.damage(Math.abs(this.speed) * 1.6, this.driver || null, { knock: Math.abs(this.speed) * 0.8, lift: 5 });
+        a.damage(Math.abs(this.speed) * 1.6, this.driver || null, { knock: Math.abs(this.speed) * 0.8, lift: 5, vehicle: true, speed: Math.abs(this.speed) });
         if (this.driver?.kind === 'player') Combat.danger(a.pos, 25);
         this.speed *= 0.85;
       }
@@ -122,9 +123,9 @@ const Vehicles = {
     if (v.driver && v.driver !== a) {
       // araç gaspı
       const dr = v.driver; this.exit(dr, false);
-      if (dr.kind === 'enemy' || dr.kind === 'police') dr.damage(5, a);
+      if (dr.kind === 'enemy' || dr.kind === 'police') dr.damage(5, a, { noCrime: dr.kind === 'enemy' });
     }
-    if (v.npcDriver) { v.npcDriver = false; const c = new Actor({ kind: 'civ', team: 'civ', cast: 'Civ', look: civilianLook(randi(1, 99999)), pos: _v1.set(v.pos.x + Math.cos(v.yaw) * 2, v.pos.y, v.pos.z - Math.sin(v.yaw) * 2), hp: 30 }); c.ai = { mode: 'walk', from: 0, to: 0, side: 1, t: 0, sp: 1.5 }; Population.civs.push(c); Population.panic(c, v.pos); if (!S.isRecognizedNinja) Crime.commit(1, 'araç gaspı'); (v.driverMeshes || []).forEach(m => m.visible = false); v.ai = null; const ti = this.traffic.indexOf(v); if (ti >= 0) this.traffic.splice(ti, 1); }
+    if (v.npcDriver) { v.npcDriver = false; const c = new Actor({ kind: 'civ', team: 'civ', cast: 'Civ', look: civilianLook(randi(1, 99999)), pos: _v1.set(v.pos.x + Math.cos(v.yaw) * 2, v.pos.y, v.pos.z - Math.sin(v.yaw) * 2), hp: 30 }); c.ai = { mode: 'walk', from: 0, to: 0, side: 1, t: 0, sp: 1.5 }; Population.civs.push(c); Population.panic(c, v.pos); if (!S.isRecognizedNinja) Crime.commit(CRIME_W.carjack, 'araç gaspı'); (v.driverMeshes || []).forEach(m => m.visible = false); v.ai = null; const ti = this.traffic.indexOf(v); if (ti >= 0) this.traffic.splice(ti, 1); }
     if (v.ai && v.ai.mode !== 'player') { v.ai = null; const ti = this.traffic.indexOf(v); if (ti >= 0) this.traffic.splice(ti, 1); }
     a.vehicle = v; v.driver = a; a.want.set(0, 0, 0); a.vel.set(0, 0, 0);
     a.hidden = v.def.kind !== 'bike'; a.st.anim = v.def.kind === 'bike' ? 'ride' : 'drive';
@@ -188,6 +189,14 @@ const Vehicles = {
       tx = B.x - Math.cos(yaw) * 3.5; tz = B.z + Math.sin(yaw) * 3.5;
       if (dist2(tx, tz, v.pos.x, v.pos.z) < 7 * 7) { const nn = B.n.filter(i => i !== ai.from); ai.from = ai.to; ai.to = nn.length ? pick(nn) : ai.from; }
       desired = 13;
+      // kavşak ışıkları: x-ekseni / z-ekseni yolları sırayla yeşil (8 sn)
+      if (B.n.length > 2) {
+        const alongX = Math.abs(B.x - A.x) > Math.abs(B.z - A.z);
+        const phase = Math.floor((Game.t + (B.x * 0.013 + B.z * 0.007)) / 8) % 2;
+        const green = alongX ? phase === 0 : phase === 1;
+        const dB = Math.sqrt(dist2(B.x, B.z, v.pos.x, v.pos.z));
+        if (!green && dB > 9.5 && dB < 20) desired = dB < 12 ? 0 : 4;
+      }
     } else if (ai.mode === 'path' || ai.mode === 'race') {
       const wp = ai.path[ai.idx]; if (!wp) { v.physics(dt, 0, 1, 0, false); return; }
       tx = wp[0]; tz = wp[1]; desired = v.maxSpeed() * (ai.speedK || 0.8);

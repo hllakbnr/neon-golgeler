@@ -14,8 +14,10 @@ const Main = {
       if (Supa.ok()) { prog(0.1, 'Supabase sürüm kontrolü…'); await AssetManager.syncRemote(); }
       prog(0.12, 'Varlıklar önbellekten yükleniyor…');
       await AssetManager.loadAll((k) => prog(0.12 + k * 0.18));
-      prog(0.32, 'Şehir inşa ediliyor…'); await wait(16);
-      World.build((k) => prog(0.32 + k * 0.6, 'Şehir inşa ediliyor… ' + Math.round(k * 100) + '%'));
+      prog(0.3, 'Hazır 3D modeller (önbellek / internet)…');
+      await AssetManager.loadLibrary((k) => prog(0.3 + k * 0.1, 'Hazır 3D modeller… ' + Math.round(k * 100) + '%'));
+      prog(0.4, 'Şehir inşa ediliyor…'); await wait(16);
+      World.build((k) => prog(0.4 + k * 0.52, 'Şehir inşa ediliyor… ' + Math.round(k * 100) + '%'));
       prog(0.96, 'Gölgeler ısınıyor…');
       Game.camera.position.set(-300, 60, 560); Game.camera.lookAt(-320, 0, 480);
       Sky.update(0.016); Game.renderer.render(Game.scene, Game.camera);
@@ -23,6 +25,7 @@ const Main = {
     } catch (e) { console.error(e); txt.textContent = 'Başlatma hatası: ' + e.message; return; }
     $('loading').classList.add('hidden');
     this.title();
+    AutoUpdater.init().then(() => setTimeout(() => AutoUpdater.check(false), 1500));
     this.last = performance.now(); requestAnimationFrame((t) => this.loop(t));
     document.addEventListener('visibilitychange', () => { if (document.hidden && Game.mode === 'play' && !Game.paused) { saveGame(); UI.pause(); } });
     addEventListener('beforeunload', () => { if (Game.player) saveGame(); });
@@ -66,7 +69,7 @@ const Main = {
     Game.dt = dt;
     Input.poll();
     UI.update(dt);
-    if (Game.mode === 'title' || !Game.player) { Game.t += dt; SHARED_UNI.uTime.value = Game.t; Sky.update(dt * 0.2); this.titleCam(dt); Game.renderer.render(Game.scene, Game.camera); return; }
+    if (Game.mode === 'title' || !Game.player) { Game.t += dt; SHARED_UNI.uTime.value = Game.t; Sky.update(dt * 0.2); this.titleCam(dt); Render.draw(); return; }
     if (!Game.paused) {
       Game.t += dt; SHARED_UNI.uTime.value = Game.t;
       Sky.update(dt);
@@ -89,7 +92,7 @@ const Main = {
     }
     World.updateCulling();
     Cam.update(dt);
-    Game.renderer.render(Game.scene, Game.camera);
+    Render.draw();
   },
   titleCam(dt) {
     const a = Game.t * 0.05, c = Game.camera;
@@ -99,5 +102,5 @@ const Main = {
   }
 };
 // Hata ayıklama kancası (konsoldan: __NG.S, __NG.Missions …)
-window.__NG = { get S() { return S; }, Bus, Game, Missions, Player, Ally, World, Vehicles, Enemies, Crime, Cutscene, UI, Input, Sky, Friends, Pickups, Eggs, Population, Main, AssetManager, AssetCache, Supa, Dragon, Combat, Cam, MISSIONS, SIDES, ACTIVITIES, EGGS, LOC, CAST, saveGame };
+window.__NG = { get S() { return S; }, Bus, Game, Missions, Player, Ally, World, Vehicles, Enemies, Crime, Cutscene, UI, Input, Sky, Friends, Pickups, Eggs, Population, Main, AssetManager, AssetCache, Supa, Dragon, Combat, Cam, AutoUpdater, MISSIONS, SIDES, ACTIVITIES, EGGS, LOC, CAST, saveGame };
 Main.init();

@@ -61,6 +61,19 @@ const World = {
     return h;
   },
   // Yer seviyesi yüzeyi (teras/çatı değil): arazi + en fazla 3.7 m üstündeki basamaklar
+  // Bir noktayı (ör. toplanabilir eşya) bina içindeyse en yakın kenarın dışına taşır
+  freeSpot(x, z, y = 0) {
+    for (let it = 0; it < 4; it++) {
+      let moved = false;
+      for (const b of this.nearBoxes(x, z)) {
+        if (b.dead || !(x > b.x0 - 0.6 && x < b.x1 + 0.6 && z > b.z0 - 0.6 && z < b.z1 + 0.6) || y >= b.y1 - 0.65 || y + 1.8 <= b.y0) continue;
+        const l = x - b.x0, r = b.x1 - x, f = z - b.z0, k = b.z1 - z, m = Math.min(l, r, f, k);
+        if (m === l) x = b.x0 - 1.4; else if (m === r) x = b.x1 + 1.4; else if (m === f) z = b.z0 - 1.4; else z = b.z1 + 1.4; moved = true;
+      }
+      if (!moved) break;
+    }
+    return [x, z];
+  },
   surfaceAt(x, z) { return this.groundAt(x, z, this.baseHeight(x, z) + 3); },
   // Yatay itme: silindir (r) vs AABB; ayak y, boy hgt
   collide(p, r, hgt = 1.8) {
@@ -94,7 +107,7 @@ const World = {
   chunkOf(x, z) {
     const k = Math.floor(x / CHUNK) + ',' + Math.floor(z / CHUNK);
     let c = this.chunks.get(k);
-    if (!c) { c = { key: k, cx: (Math.floor(x / CHUNK) + 0.5) * CHUNK, cz: (Math.floor(z / CHUNK) + 0.5) * CHUNK, bld: [], box: [], neon: [], cyl: [], cone: [], halos: [], group: new THREE.Group() }; this.chunks.set(k, c); }
+    if (!c) { c = { key: k, cx: (Math.floor(x / CHUNK) + 0.5) * CHUNK, cz: (Math.floor(z / CHUNK) + 0.5) * CHUNK, bld: [], box: [], neon: [], cyl: [], cone: [], sph: [], lib: {}, halos: [], group: new THREE.Group() }; this.chunks.set(k, c); }
     return c;
   },
   _m: new THREE.Matrix4(), _q: new THREE.Quaternion(), _s: new THREE.Vector3(), _p: new THREE.Vector3(), _e: new THREE.Euler(),
@@ -107,6 +120,37 @@ const World = {
   },
   addCyl(x, y, z, r, h, color, solid = false) { this.chunkOf(x, z).cyl.push([this.mtx(x, y, z, r * 2, h, r * 2), color]); if (solid) this.addBox(x - r, x + r, z - r, z + r, y, y + h); },
   addCone(x, y, z, r, h, color) { this.chunkOf(x, z).cone.push([this.mtx(x, y, z, r * 2, h, r * 2, Math.PI / 4), color]); },
+  // ---- sokak mobilyası: kütüphane GLB'si varsa instanced model, yoksa çok parçalı yedek model
+  addLib(slot, x, y, z, h, ry) { const c = this.chunkOf(x, z); (c.lib[slot] ||= []).push(this.mtx(x, y, z, h, h, h, ry)); },
+  lamp(x, z, dx, dz, lc, light) {
+    const ry = Math.atan2(dx, dz);
+    if (AssetManager.templates.lib_lamp) { this.addLib('lib_lamp', x, 0, z, 3.3, ry); this.addNeon(x + dx * 0.6, 6.1, z + dz * 0.6, 0.6, 0.15, 0.6, lc, light); return; }
+    this.addCyl(x, 0, z, 0.16, 6.4, '#2a2540'); this.addCyl(x, 0, z, 0.32, 0.5, '#2a2540');
+    this.addProp(x + dx * 0.55, 6.25, z + dz * 0.55, dx ? 1.3 : 0.18, 0.16, dz ? 1.3 : 0.18, '#2a2540');
+    this.addNeon(x + dx * 1.05, 5.95, z + dz * 1.05, dx ? 0.9 : 0.5, 0.28, dz ? 0.9 : 0.5, lc, light);
+    this.addHalo(x + dx * 1.05, 5.75, z + dz * 1.05, lc, 5);
+  },
+  tree(x, z) {
+    if (AssetManager.templates.lib_tree) { this.addLib('lib_tree', x, 0, z, rand(2.6, 3.6), rand(0, 6.28)); return; }
+    const g = pick(['#2fd67a', '#4a9a2a', '#6fbf3a', '#3bbf7a']);
+    this.addCyl(x, 0, z, 0.32, 2.6, '#6b4a2a'); this.addCyl(x, 0, z, 0.9, 0.35, '#8a7a6a');
+    this.addSph(x, 3.4, z, 1.9, g); this.addSph(x + 0.7, 4.4, z - 0.4, 1.3, g); this.addSph(x - 0.6, 4.2, z + 0.5, 1.2, g);
+  },
+  bench(x, z, ry) {
+    if (AssetManager.templates.lib_bench) { this.addLib('lib_bench', x, 0, z, 0.6, ry); return; }
+    const along = Math.abs(Math.sin(ry)) > 0.5;
+    this.addProp(x, 0.45, z, along ? 0.6 : 1.8, 0.12, along ? 1.8 : 0.6, '#c9603a'); this.addProp(x + (along ? 0.28 : 0), 0.55, z + (along ? 0 : 0.28), along ? 0.1 : 1.8, 0.5, along ? 1.8 : 0.1, '#c9603a');
+    for (const s of [-0.7, 0.7]) this.addProp(x + (along ? 0 : s), 0, z + (along ? s : 0), 0.12, 0.45, 0.5, '#2a2540');
+  },
+  addSph(x, y, z, r, color) { this.chunkOf(x, z).sph.push([this.mtx(x, y, z, r * 2, r * 1.7, r * 2), color]); },
+  libGeo(slot) {
+    this._libGeo ||= {}; if (this._libGeo[slot] !== undefined) return this._libGeo[slot];
+    const t = AssetManager.templates[slot]; if (!t) return this._libGeo[slot] = null;
+    t.updateMatrixWorld(true); const geos = [], col = new THREE.Color();
+    t.traverse(m => { if (!m.isMesh) return; const g = m.geometry.clone(); g.applyMatrix4(m.matrixWorld); if (!g.attributes.normal) g.computeVertexNormals(); const n = g.attributes.position.count, arr = new Float32Array(n * 3); col.copy(Array.isArray(m.material) ? m.material[0].color : m.material.color || col.set('#ffffff')); for (let i = 0; i < n; i++) arr.set([col.r, col.g, col.b], i * 3); g.setAttribute('color', new THREE.BufferAttribute(arr, 3)); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'color'].includes(k)) g.deleteAttribute(k); if (g.index) geos.push(g.toNonIndexed()); else geos.push(g); });
+    let mg = null; try { mg = geos.length ? mergeGeometries(geos, false) : null; } catch (e) { console.warn('Kütüphane prop birleştirilemedi', slot, e); }
+    return this._libGeo[slot] = mg;
+  },
   addHalo(x, y, z, color, size) { this.chunkOf(x, z).halos.push([x, y, z, color, size]); },
   finalizeChunks() {
     const col = new THREE.Color();
@@ -118,7 +162,7 @@ const World = {
       im.computeBoundingSphere(); im.computeBoundingBox && im.computeBoundingBox();
       return im;
     };
-    const propMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.0 });
+    const propMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.0, clearcoat: Settings.quality === 'low' ? 0 : 0.45, clearcoatRoughness: 0.2 });
     const neonMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
     const haloMat = new THREE.PointsMaterial({ size: 1, map: haloTex, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true, toneMapped: false });
     this.haloMat = haloMat;
@@ -129,6 +173,12 @@ const World = {
       const n = make(c.neon, Geo.boxB, neonMat); if (n) c.group.add(n);
       const cy = make(c.cyl, cylG, propMat); if (cy) { cy.castShadow = true; c.group.add(cy); }
       const co = make(c.cone, coneG, propMat); if (co) { co.castShadow = true; c.group.add(co); }
+      const sp = make(c.sph, Geo.sphere, propMat); if (sp) { sp.castShadow = true; sp.receiveShadow = true; c.group.add(sp); }
+      for (const slot in c.lib) {
+        const g = this.libGeo(slot); if (!g) continue;
+        const im = new THREE.InstancedMesh(g, this.libMat ||= new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.4, clearcoat: 0.3 }), c.lib[slot].length);
+        c.lib[slot].forEach((m, i) => im.setMatrixAt(i, m)); im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere(); im.castShadow = true; im.receiveShadow = true; c.group.add(im);
+      }
       if (c.halos.length) {
         const g = new THREE.BufferGeometry(); const pos = new Float32Array(c.halos.length * 3), cl = new Float32Array(c.halos.length * 3);
         c.halos.forEach((h, i) => { pos.set([h[0], h[1], h[2]], i * 3); col.set(h[3]); cl.set([col.r, col.g, col.b], i * 3); });
@@ -283,17 +333,15 @@ const World = {
     for (let x = -560; x <= 400; x += 80) for (let z = -560; z <= 560; z += 32) {
       if (this.isMountain(x, z) || !this.landAt(x + 9, z) || this.landAt(x + 9, z).bridge) continue;
       const d = districtAt(x, z).id;
-      this.addCyl(x + 8.6, 0, z, 0.15, 6, '#3a3550');
       const lc = d === 'Neon_Boulevard' ? (z % 64 === 0 ? '#ff2fd6' : '#20f0ff') : '#ffd28a';
-      this.addNeon(x + 8.0, 6, z, 1.4, 0.3, 0.5, lc, Math.abs(z) % 96 === 0);
-      this.addHalo(x + 8.0, 5.8, z, lc, 5);
-      if ((d === 'East_Res' || d === 'Old_Bazaar') && R() > 0.5) { this.addCyl(x - 8.6, 0, z + 16, 0.35, 2.5, '#6b4a2a'); this.addCone(x - 8.6, 2.2, z + 16, 2.2, 4.5, pick(['#2fd67a', '#4a9a2a', '#6fbf3a'])); }
+      this.lamp(x + 8.6, z, -1, 0, lc, Math.abs(z) % 96 === 0);
+      if ((d === 'East_Res' || d === 'Old_Bazaar') && R() > 0.5) this.tree(x - 8.6, z + 16);
+      if ((d === 'Neon_Boulevard' || d === 'East_Res') && R() > 0.7) this.bench(x + 9.2, z + 12, Math.PI / 2);
     }
     for (let z = -560; z <= 560; z += 80) for (let x = -560; x <= 400; x += 36) {
       if (this.isMountain(x, z) || !this.landAt(x, z + 9) || this.landAt(x, z + 9).bridge) continue;
-      this.addCyl(x, 0, z + 8.6, 0.15, 6, '#3a3550');
       const lc = districtAt(x, z).id === 'Neon_Boulevard' ? '#ff7ad9' : '#ffd28a';
-      this.addNeon(x, 6, z + 8.0, 0.5, 0.3, 1.4, lc, false); this.addHalo(x, 5.8, z + 8.0, lc, 5);
+      this.lamp(x, z + 8.6, 0, -1, lc, false);
     }
     // Neon Bulvar ana cadde kemerleri
     for (let z = -520; z <= 520; z += 80) {

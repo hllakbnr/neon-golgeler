@@ -6,6 +6,7 @@
 const FRIEND_CAST = { kaan: 'Hero_Main', ela: 'Ally_Partner', ray: 'Master_Lightning', kor: 'Master_Fire', derya: 'Master_Water', taskin: 'Master_Earth', ayaz: 'Master_Ice', filiz: 'Master_Green', hikmet: 'Mentor_Master', tarik: 'NPC_DojoGuy', noda: 'NPC_NoodleChef', mimar: 'Boss_Architect', kanca: 'Boss_Hook' };
 
 class Figure {
+  static tintCache = new Map();
   constructor(castId, outfit = 'civil', lookOverride = null) {
     this.castId = castId; this.outfit = outfit;
     this.root = new THREE.Group();
@@ -25,8 +26,11 @@ class Figure {
   rebuild(lookOverride) {
     this.inner.clear(); this.extras = {}; this.meshes = [];
     const slot = this.castId + (CAST[this.castId]?.looks ? '_' + this.outfit : '');
-    const tpl = AssetManager.instance(slot) || AssetManager.instance(this.castId);
-    if (tpl) {
+    let tpl = AssetManager.instance(slot) || AssetManager.instance(this.castId);
+    this.skinned = false; this.mixer = null; this.bones = null;
+    if (!tpl && Settings.modelMode === 'library' && this.castId !== 'Dummy') { tpl = AssetManager.instance(castLibSlot(this.castId)); if (tpl) this.libSlot = castLibSlot(this.castId); }
+    if (tpl && tpl.userData.skinned) { this.setupSkinned(tpl, this.look(lookOverride)); }
+    else if (tpl) {
       this.custom = true; this.inner.add(tpl);
       this.parts = collectPivots(tpl);
       tpl.traverse(n => { if (n.isMesh) { this.meshes.push(n); if (/mask/i.test(n.name)) this.extras.mask = n; } });
@@ -34,8 +38,110 @@ class Figure {
     this.buildUmbrella();
     this.lookData = this.look(lookOverride);
   }
+  // ---------------------------------------------------------- İskeletli (GLB) model
+  setupSkinned(tpl, L) {
+    this.custom = true; this.skinned = true; this.inner.add(tpl); this.parts = {};
+    this.inner.scale.setScalar(L?.scale || 1);
+    // renklendirme (malzemeler figür başına önbellekli klonlanır)
+    const tint = (m, i) => {
+      const n = (m.name || '').toLowerCase();
+      let c = L.torso;
+      if (/joint|grey|gray|metal/.test(n) || i > 0) c = L.plate || L.legs || L.arms;
+      if (/black|eye|dark/.test(n)) return m;
+      const key = (this.libSlot || 'x') + '|' + n + '|' + i + '|' + c + '|' + (m.map ? 'tx' : '');
+      let mm = Figure.tintCache.get(key);
+      if (!mm) {
+        mm = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(c), roughness: 0.32, metalness: 0.05, clearcoat: 0.6, clearcoatRoughness: 0.25, map: m.map || null, envMapIntensity: 1.0 });
+        if (m.map) mm.color.lerp(new THREE.Color(1, 1, 1), 0.55);
+        Figure.tintCache.set(key, mm);
+      }
+      return mm;
+    };
+    tpl.traverse(n => {
+      if (!n.isMesh) return;
+      n.castShadow = true; n.frustumCulled = false;
+      n.material = Array.isArray(n.material) ? n.material.map(tint) : tint(n.material, n.material.name && /joint/i.test(n.material.name) ? 1 : 0);
+      this.meshes.push(n);
+    });
+    // kemikler
+    const bones = {}; const want = {
+      hips: /(^|[^a-z])hips$|pelvis/i, spine: /spine2$|spine1$|chest$|torso$|spine$/i, head: /head$/i,
+      armL: /(left.?arm$)|(upper.?arm.?l$)|(arm.?l$)|(shoulder.?l$)/i, armR: /(right.?arm$)|(upper.?arm.?r$)|(arm.?r$)|(shoulder.?r$)/i,
+      legL: /(left.?up.?leg$)|(upper.?leg.?l$)|(thigh.?l$)|(leg.?l$)/i, legR: /(right.?up.?leg$)|(upper.?leg.?r$)|(thigh.?r$)|(leg.?r$)/i
+    };
+    tpl.traverse(n => { if (!n.isBone) return; for (const k in want) if (!bones[k] && want[k].test(n.name)) bones[k] = n; });
+    this.bones = bones;
+    // animasyon klipleri
+    const clips = tpl.userData.clips || [];
+    this.mixer = new THREE.AnimationMixer(tpl); this.actions = {};
+    const find = (re, not) => clips.find(c => re.test(c.name) && !(not && not.test(c.name)) && !/pose|agree|shake/i.test(c.name));
+    const map = { idle: find(/idle|stand/i), walk: find(/walk/i, /jump/i), run: find(/run/i), jump: find(/jump/i), punch: find(/punch|attack/i), death: find(/death|die/i), sit: find(/sit/i), cheer: find(/dance|wave|thumbs|yes/i) };
+    for (const k in map) if (map[k]) this.actions[k] = this.mixer.clipAction(map[k]);
+    if (this.actions.death) { this.actions.death.setLoop(THREE.LoopOnce, 1); this.actions.death.clampWhenFinished = true; }
+    if (this.actions.jump) { this.actions.jump.setLoop(THREE.LoopOnce, 1); this.actions.jump.clampWhenFinished = true; }
+    if (this.actions.punch) { this.actions.punch.setLoop(THREE.LoopOnce, 1); }
+    this.curKey = null; this.play('idle', 0);
+    // aksesuar: saç + maske kafa kemiğine (insan modeli)
+    if (bones.head && L && this.libSlot !== 'lib_robot' && this.libSlot !== 'lib_soldier') {
+      this.inner.updateMatrixWorld(true);
+      const hq = new THREE.Quaternion(), hs = new THREE.Vector3(), rq = new THREE.Quaternion();
+      bones.head.getWorldQuaternion(hq); bones.head.getWorldScale(hs); this.root.getWorldQuaternion(rq);
+      const g = new THREE.Group(); g.quaternion.copy(hq.invert().multiply(rq));
+      g.scale.setScalar(0.52 * (L.scale || 1) / Math.max(hs.x, 1e-4)); g.position.set(0, 0, 0);
+      bones.head.add(g); this.accRoot = g;
+      if (L.hair) this.hair(g, L.hair);
+      const mc = CAST[this.castId]?.mask || '#333', mask = new THREE.Group(); g.add(mask);
+      this.part(mask, mc, 0.48, 0.2, 0.08, 0, 0.11, 0.21, { geo: Geo.box }); this.part(mask, mc, 0.48, 0.12, 0.46, 0, 0.11, 0, { geo: Geo.box });
+      mask.visible = false; this.extras.mask = mask;
+    }
+    this.parts = {};
+    { const g = new THREE.Group(); g.position.set(-0.43, 1.55, 0); this.inner.add(g); this.parts.arm_R = g; }
+  }
+  play(key, fade = 0.2) {
+    const a = this.actions[key] || this.actions.idle; if (!a || this.curAct === a) { this.curKey = key; return; }
+    a.reset(); a.enabled = true; a.setEffectiveWeight(1); a.play();
+    if (this.curAct && fade > 0) this.curAct.crossFadeTo(a, fade, false); else if (this.curAct) this.curAct.stop();
+    this.curAct = a; this.curKey = key;
+  }
+  rotWorld(bone, axis, ang) {
+    if (!bone || !ang) return;
+    const pq = new THREE.Quaternion(); if (bone.parent) bone.parent.getWorldQuaternion(pq);
+    const w = new THREE.Quaternion().setFromAxisAngle(axis, ang);
+    const inv = pq.clone().invert();
+    bone.quaternion.premultiply(inv.multiply(w).multiply(pq));
+  }
+  animateSkinned(dt, st) {
+    const a = st.anim;
+    const key = { idle: 'idle', walk: 'walk', umbrella: 'walk', run: 'run', jump: 'jump', fall: 'jump', glide: 'idle', spin: 'idle', drive: 'sit', ride: 'sit', sit: 'sit', focus: 'sit', kneel: 'sit', cheer: 'cheer', hurt: 'idle', cower: 'idle', swim: 'walk', ko: 'death' }[a] || 'idle';
+    if (key !== this.curKey) this.play(key, key === 'death' ? 0.1 : 0.22);
+    const act = this.curAct;
+    if (act) { if (key === 'walk') act.timeScale = clamp(st.speed / 1.7, 0.6, 1.8); else if (key === 'run') act.timeScale = clamp(st.speed / 6.5, 0.8, 1.6); else act.timeScale = 1; }
+    this.mixer.update(dt);
+    // katmanlı prosedürel ekler (kombo, şok dalgası, süzülme, kasırga, isabet)
+    this.root.updateMatrixWorld(true);
+    const rq = new THREE.Quaternion(); this.root.getWorldQuaternion(rq);
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(rq), fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(rq);
+    const B = this.bones; let lean = 0;
+    if (st.punch > 0) { const k = Math.sin((1 - st.punch) * Math.PI); this.rotWorld(st.punchSide ? B.armL : B.armR, right, -1.5 * k); this.rotWorld(B.spine, new THREE.Vector3(0, 1, 0), (st.punchSide ? -0.35 : 0.35) * k); }
+    if (st.kick > 0) { const k = Math.sin((1 - st.kick) * Math.PI); this.rotWorld(B.legR, right, -1.3 * k); lean -= 0.2 * k; }
+    if (st.slam > 0) { this.rotWorld(B.armL, right, -2.6 * st.slam); this.rotWorld(B.armR, right, -2.6 * st.slam); }
+    if (st.cast > 0) { this.rotWorld(B.armL, right, -1.4 * st.cast); this.rotWorld(B.armR, right, -1.4 * st.cast); }
+    if (a === 'glide' || a === 'spin') { this.rotWorld(B.armL, fwd, 1.2); this.rotWorld(B.armR, fwd, -1.2); if (a === 'glide') lean += 0.45; }
+    if ((a === 'drive' || a === 'ride' || a === 'sit' || a === 'focus') && !this.actions.sit) { this.rotWorld(B.legL, right, -1.4); this.rotWorld(B.legR, right, -1.4); this.rotWorld(B.armL, right, -1.1); this.rotWorld(B.armR, right, -1.1); }
+    if (a === 'cheer' && !this.actions.cheer) { this.rotWorld(B.armL, right, -2.8 + Math.sin(Game.t * 8) * 0.3); this.rotWorld(B.armR, right, -2.8 - Math.sin(Game.t * 8) * 0.3); }
+    if (a === 'hurt' || a === 'cower') { this.rotWorld(B.armL, right, -2.4); this.rotWorld(B.armR, right, -2.4); lean += 0.5; }
+    if (a === 'umbrella') this.rotWorld(B.armR, right, -1.2);
+    if (a === 'jump' && !this.actions.jump) { this.rotWorld(B.armL, right, -2.2); this.rotWorld(B.armR, right, -2.2); }
+    if (a === 'ko' && !this.actions.death) lean += 0;
+    if (st.hit > 0) lean -= 0.35 * st.hit;
+    if (a === 'run') lean += 0.12;
+    this.rotWorld(B.spine, right, lean);
+    this.inner.position.y = lerp(this.inner.position.y, (a === 'sit' || a === 'focus') && !this.actions.sit ? -0.45 : a === 'swim' ? -0.9 : 0, Math.min(1, dt * 10));
+    this.inner.rotation.x = lerp(this.inner.rotation.x, a === 'swim' ? 1.2 : 0, Math.min(1, dt * 6));
+  }
   part(parent, color, w, h, d, x, y, z, opts) {
-    const m = new THREE.Mesh(opts?.geo || Geo.box, opts?.mat || Mat.plastic(color, opts));
+    const geo = opts?.geo || (Math.min(w, h, d) > 0.12 ? Geo.rbox : Geo.box);
+    const m = new THREE.Mesh(geo, opts?.mat || Mat.plastic(color, opts));
     m.scale.set(w, h, d); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = false;
     if (opts?.rot) m.rotation.set(...opts.rot);
     parent.add(m); this.meshes.push(m); return m;
@@ -178,6 +284,7 @@ class Figure {
   setOutfit(o) { if (this.outfit === o) return; const mask = this.extras.mask?.visible; this.outfit = o; this.rebuild(); this.setMask(!!mask); }
   // ---------------------------------------------------------- Poz animasyonu
   animate(dt, st) {
+    if (this.skinned) return this.animateSkinned(dt, st);
     const P = this.pose, sp = st.speed || 0;
     this.phase += dt * (2.2 + sp * 1.15);
     const s = Math.sin(this.phase), c = Math.cos(this.phase);

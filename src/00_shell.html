@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#0b0620">
 <title>Neon Gölgeler</title>
 <!-- Yerel vendor bayrağı: tools/fetch-vendor.mjs çalıştırıldığında vendor/vendor-flag.js oluşur ve oyun çevrimdışı çalışır -->
+<script>window.NG_BUILD = '__NG_VERSION__';</script>
 <script src="vendor/vendor-flag.js"></script>
 <script>
 (function(){
@@ -149,7 +150,7 @@ textarea{width:100%;min-height:160px;font-family:Consolas,monospace;font-size:12
     <button id="btnSettings">⚙ Ayarlar</button>
     <button id="btnAdmin">🛠 Admin Paneli</button>
   </div>
-  <div class="foot">Klavye/Fare · Gamepad · Dokunmatik — giriş cihazı otomatik algılanır</div>
+  <div class="foot">Sürüm __NG_VERSION__ · Klavye/Fare · Gamepad · Dokunmatik — giriş cihazı otomatik algılanır</div>
 </div>
 
 <div id="hud" class="hidden">
@@ -184,6 +185,7 @@ textarea{width:100%;min-height:160px;font-family:Consolas,monospace;font-size:12
     <div class="tb" data-a="spin" style="right:150px;bottom:120px">KASIRGA</div>
     <div class="tb" data-a="dragon" style="right:0;bottom:190px">EJDER</div>
     <div class="tb" data-a="sprint" style="right:200px;bottom:110px">KOŞ</div>
+    <div class="tb" data-a="dash" style="right:180px;bottom:190px">ATIL</div>
   </div>
   <div id="ttop">
     <div class="tb" data-a="phone">📱</div>
@@ -209,6 +211,7 @@ textarea{width:100%;min-height:160px;font-family:Consolas,monospace;font-size:12
 <div id="pause" class="panel hidden" style="width:min(420px,94vw)"></div>
 <div id="settings" class="panel hidden" style="width:min(480px,94vw)"></div>
 <div id="admin" class="panel hidden"></div>
+<div id="updater" class="panel hidden" style="width:min(520px,94vw);z-index:40"></div>
 <input type="file" id="filepick" class="hidden" accept=".glb,.gltf,.obj,.png,.jpg,.jpeg,.webp,.json">
 <div id="fade"></div><div id="flash"></div>
 

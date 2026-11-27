@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#0b0620">
 <title>Neon Gölgeler</title>
 <!-- Yerel vendor bayrağı: tools/fetch-vendor.mjs çalıştırıldığında vendor/vendor-flag.js oluşur ve oyun çevrimdışı çalışır -->
+<script>window.NG_BUILD = '1.1.0';</script>
 <script src="vendor/vendor-flag.js"></script>
 <script>
 (function(){
@@ -149,7 +150,7 @@ textarea{width:100%;min-height:160px;font-family:Consolas,monospace;font-size:12
     <button id="btnSettings">⚙ Ayarlar</button>
     <button id="btnAdmin">🛠 Admin Paneli</button>
   </div>
-  <div class="foot">Klavye/Fare · Gamepad · Dokunmatik — giriş cihazı otomatik algılanır</div>
+  <div class="foot">Sürüm 1.1.0 · Klavye/Fare · Gamepad · Dokunmatik — giriş cihazı otomatik algılanır</div>
 </div>
 
 <div id="hud" class="hidden">
@@ -184,6 +185,7 @@ textarea{width:100%;min-height:160px;font-family:Consolas,monospace;font-size:12
     <div class="tb" data-a="spin" style="right:150px;bottom:120px">KASIRGA</div>
     <div class="tb" data-a="dragon" style="right:0;bottom:190px">EJDER</div>
     <div class="tb" data-a="sprint" style="right:200px;bottom:110px">KOŞ</div>
+    <div class="tb" data-a="dash" style="right:180px;bottom:190px">ATIL</div>
   </div>
   <div id="ttop">
     <div class="tb" data-a="phone">📱</div>
@@ -209,6 +211,7 @@ textarea{width:100%;min-height:160px;font-family:Consolas,monospace;font-size:12
 <div id="pause" class="panel hidden" style="width:min(420px,94vw)"></div>
 <div id="settings" class="panel hidden" style="width:min(480px,94vw)"></div>
 <div id="admin" class="panel hidden"></div>
+<div id="updater" class="panel hidden" style="width:min(520px,94vw);z-index:40"></div>
 <input type="file" id="filepick" class="hidden" accept=".glb,.gltf,.obj,.png,.jpg,.jpeg,.webp,.json">
 <div id="fade"></div><div id="flash"></div>
 
@@ -223,6 +226,14 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+const NG_VERSION = window.NG_BUILD || '0.0.0';
 
 // ---------------------------------------------------------------- Yardımcılar
 const $ = (id) => document.getElementById(id);
@@ -249,11 +260,14 @@ const Bus = {
 };
 
 // ---------------------------------------------------------------- Ayarlar
-const SETTINGS_KEY = 'ng_settings_v1';
+const SETTINGS_KEY = 'ng_settings_v2';
 const Settings = Object.assign({
   quality: IS_MOBILE ? 'low' : 'high',   // low | medium | high
   viewDist: IS_MOBILE ? 260 : 420,
-  shadows: !IS_MOBILE,
+  shadows: true,
+  bloom: !IS_MOBILE,
+  modelMode: 'library',   // library (internetten hazır GLB) | block (blok figür)
+  updateUrl: '',          // boşsa varsayılan GitHub kaynağı
   invertY: false,
   sens: 1.0,
   timeScale: 60,           // 1 gerçek saniye = 60 oyun saniyesi (1 oyun saati = 60 sn)
@@ -294,6 +308,7 @@ function freshState() {
     weather: 'clear',
     pos: null,                  // [x,y,z]
     eventLog: [],               // radyo bültenleri için
+    heat: 0,                    // aranma ısısı 0..100 → yıldızlar
     stats: { kos: 0, crimes: 0, races: 0, distance: 0 },
     ending: null
   };
@@ -1139,6 +1154,33 @@ function normalizeModel(root, targetH = 2.0) {
   wrap.add(root);
   return wrap;
 }
+function normalizeVehicle(root, targetLen) {
+  root.updateMatrixWorld(true);
+  const b = new THREE.Box3().setFromObject(root), sz = b.getSize(new THREE.Vector3());
+  const wrap = new THREE.Group(), inner = new THREE.Group(); inner.add(root); wrap.add(inner);
+  if (sz.x > sz.z) inner.rotation.y = Math.PI / 2;               // uzun eksen ileri (+z) olsun
+  const s = targetLen / Math.max(sz.x, sz.z, 0.001); inner.scale.setScalar(s);
+  wrap.updateMatrixWorld(true);
+  const b2 = new THREE.Box3().setFromObject(inner), c = b2.getCenter(new THREE.Vector3());
+  inner.position.set(-c.x, -b2.min.y, -c.z);
+  return wrap;
+}
+// Hazır GLB kütüphanesi: CORS açık kaynaklar (aynalar sırayla denenir). Admin panelinden
+// kendi URL'lerini (Kenney / Quaternius vb. .glb) aynı slotlara atayabilirsin.
+const LIB_VERSION = 'lib-r160-1';
+const LIB_BASES = ['https://raw.githubusercontent.com/mrdoob/three.js/r160/examples/models/gltf/', 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/models/gltf/', 'https://threejs.org/examples/models/gltf/'];
+const LIBRARY = {
+  lib_human: { file: 'Xbot.glb', kind: 'char', label: 'İnsan (iskeletli, Idle/Walk/Run)' },
+  lib_soldier: { file: 'Soldier.glb', kind: 'char', label: 'Muhafız/Polis (iskeletli)' },
+  lib_robot: { file: 'RobotExpressive/RobotExpressive.glb', kind: 'char', label: 'Robot muhafız (Idle/Walk/Run/Jump/Punch)' },
+  lib_car: { file: 'ferrari.glb', kind: 'vehicle', label: 'Spor araba (DRACO)' },
+  lib_tree: { file: null, kind: 'prop', label: 'Ağaç (.glb URL ata)', urls: [] },
+  lib_lamp: { file: null, kind: 'prop', label: 'Sokak lambası (.glb URL ata)', urls: [] },
+  lib_bench: { file: null, kind: 'prop', label: 'Bank (.glb URL ata)', urls: [] }
+};
+// Karakter kod adı → kütüphane modeli
+const CAST_LIB = { Elite: 'lib_robot', Boss_Architect: 'lib_robot', Police: 'lib_soldier', Guard: 'lib_soldier' };
+const castLibSlot = (castId) => CAST_LIB[castId] || 'lib_human';
 function autoRig(wrap, cachedMeta) {
   wrap.updateMatrixWorld(true);
   const found = {};
@@ -1203,7 +1245,7 @@ const AssetManager = {
     return n;
   },
   async loadAll(progress) {
-    const entries = Object.values(this.manifest);
+    const entries = Object.values(this.manifest).filter(e => e.source !== 'library');
     let i = 0;
     for (const e of entries) {
       try { await this.loadOne(e.id); } catch (err) { console.warn('Varlık yüklenemedi', e.id, err); this.status[e.slot] = 'error'; }
@@ -1215,10 +1257,18 @@ const AssetManager = {
     if (!force && rec && rec.blob && rec.version === entry.version && rec.updatedAt === entry.updatedAt) {
       return { blob: rec.blob, meta: rec.rigMeta || null, from: 'cache' };
     }
-    if (!entry.url) { if (rec && rec.blob) return { blob: rec.blob, meta: rec.rigMeta, from: 'cache' }; throw new Error('Kaynak yok'); }
-    const r = await fetch(entry.url, { cache: 'no-store' });
-    if (!r.ok) throw new Error('İndirme hatası ' + r.status);
-    const blob = await r.blob();
+    const urls = entry.urls || (entry.url ? [entry.url] : []);
+    if (!urls.length) { if (rec && rec.blob) return { blob: rec.blob, meta: rec.rigMeta, from: 'cache' }; throw new Error('Kaynak yok'); }
+    let blob = null, lastErr = null;
+    for (const u of urls) {
+      try {
+        const ac = new AbortController(); const to = setTimeout(() => ac.abort(), entry.kind === 'texture' ? 15000 : 45000);
+        const r = await fetch(u, { cache: 'no-store', signal: ac.signal, mode: 'cors' }); clearTimeout(to);
+        if (!r.ok) throw new Error('İndirme hatası ' + r.status);
+        blob = await r.blob(); if (blob.size < 64) throw new Error('Boş dosya'); break;
+      } catch (e) { lastErr = e; }
+    }
+    if (!blob) { if (rec && rec.blob) return { blob: rec.blob, meta: rec.rigMeta, from: 'cache' }; throw lastErr || new Error('İndirilemedi'); }
     await AssetCache.put({ id: entry.id, slot: entry.slot, kind: entry.kind, fmt: entry.fmt, version: entry.version, updatedAt: entry.updatedAt, blob, size: blob.size, rigMeta: null, savedAt: Date.now() });
     return { blob, meta: null, from: 'download' };
   },
@@ -1233,27 +1283,58 @@ const AssetManager = {
       Bus.emit('textureLoaded', e.slot);
       return;
     }
-    let obj;
+    let obj, clips = [];
     if (e.fmt === 'obj') {
       obj = (this.obj ||= new OBJLoader()).parse(await blob.text());
     } else {
       const buf = await blob.arrayBuffer();
-      obj = await new Promise((res, rej) => (this.gltf ||= new GLTFLoader()).parse(buf, '', g => res(g.scene), rej));
+      const g = await new Promise((res, rej) => this.gltfLoader().parse(buf, '', res, rej));
+      obj = g.scene; clips = g.animations || [];
     }
-    const isVeh = e.slot.startsWith('veh_');
-    const wrap = normalizeModel(obj, isVeh ? (VEHICLES[e.slot.slice(4)]?.h || 1.5) : 2.0 * (CAST[e.slot]?.look?.scale || 1));
-    if (!isVeh) {
+    let skinned = false; obj.traverse(n => { if (n.isSkinnedMesh) skinned = true; if (n.isMesh) { n.castShadow = true; n.receiveShadow = true; n.frustumCulled = !n.isSkinnedMesh; } });
+    const isVeh = e.slot.startsWith('veh_') || e.vehicle;
+    const libVeh = LIBRARY[e.slot]?.kind === 'vehicle';
+    let wrap;
+    if (isVeh || libVeh) wrap = normalizeVehicle(obj, libVeh ? 4.5 : (VEHICLES[e.slot.slice(4)]?.len || 4.4));
+    else wrap = normalizeModel(obj, 2.0 * (CAST[e.slot]?.look?.scale || 1));
+    if (!isVeh && !libVeh && !skinned) {
       const rig = autoRig(wrap, meta);
       if (!meta) { const rec = await AssetCache.get(e.id); if (rec) { rec.rigMeta = rig.meta; await AssetCache.put(rec); } }
     }
-    wrap.userData.custom = true;
+    wrap.userData.custom = true; wrap.userData.skinned = skinned; wrap.userData.clips = clips;
     this.templates[e.slot] = wrap; this.status[e.slot] = from;
     Bus.emit('modelLoaded', e.slot);
   },
+  gltfLoader() {
+    if (this.gltf) return this.gltf;
+    const l = new GLTFLoader();
+    try {
+      const d = new DRACOLoader();
+      d.setDecoderPath(window.NG_LOCAL_VENDOR ? './vendor/addons/libs/draco/gltf/' : 'https://unpkg.com/three@0.160.0/examples/jsm/libs/draco/gltf/');
+      l.setDRACOLoader(d);
+    } catch (e) { console.warn('DRACO kullanılamıyor', e); }
+    return this.gltf = l;
+  },
   instance(slot) {
     const t = this.templates[slot]; if (!t) return null;
-    const c = t.clone(true);
+    const c = t.userData.skinned ? skeletonClone(t) : t.clone(true);
+    c.userData.clips = t.userData.clips; c.userData.skinned = t.userData.skinned;
     return c;
+  },
+  // ---------------------------------------------------------- hazır model kütüphanesi (internet)
+  async loadLibrary(progress) {
+    if (Settings.modelMode !== 'library') return;
+    const keys = Object.keys(LIBRARY); let i = 0;
+    await Promise.all(keys.map(async (k) => {
+      const L = LIBRARY[k];
+      if (this.manifest[k] && this.manifest[k].source !== 'library') { i++; return; } // kullanıcı kendi modelini atadı
+      if (!L.file && !(L.urls && L.urls.length)) { i++; return; }
+      const urls = L.urls || LIB_BASES.map(b => b + L.file);
+      this.manifest[k] = { id: k, slot: k, kind: 'model', fmt: 'glb', urls, version: L.ver || LIB_VERSION, updatedAt: LIB_VERSION, source: 'library', name: L.label };
+      try { await this.loadOne(k); } catch (e) { console.warn('Kütüphane modeli yüklenemedi (yedek kullanılacak):', k, e.message); this.status[k] = 'error'; }
+      progress && progress(++i / keys.length);
+    }));
+    this.saveManifest();
   },
   async addLocalFile(slot, file) {
     const fmt = (file.name.split('.').pop() || 'glb').toLowerCase();
@@ -1298,6 +1379,7 @@ const AssetManager = {
 // ============================================================================
 const SHARED_UNI = { uNight: { value: 0 }, uWet: { value: 0 }, uTime: { value: 0 } };
 const Render = {
+  draw() { if (this.composer) this.composer.render(); else Game.renderer.render(Game.scene, Game.camera); },
   init() {
     const canvas = $('gl');
     const q = Settings.quality;
@@ -1311,7 +1393,7 @@ const Render = {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.15, Settings.viewDist + 200);
-    scene.fog = new THREE.Fog(0x1a0a33, 60, Settings.viewDist);
+    scene.fog = new THREE.FogExp2(0x1a0a33, 1.75 / Settings.viewDist);
     // Ortam yansıması (parlak ABS plastik için)
     const pmrem = new THREE.PMREMGenerator(renderer);
     scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture;
@@ -1319,16 +1401,26 @@ const Render = {
     const hemi = new THREE.HemisphereLight(0xbfd8ff, 0x302040, 0.8);
     const sun = new THREE.DirectionalLight(0xffffff, 2.2);
     sun.castShadow = !!Settings.shadows;
-    const sm = q === 'high' ? 2048 : 1024;
+    const sm = q === 'high' ? 4096 : q === 'medium' ? 2048 : 1024;
     sun.shadow.mapSize.set(sm, sm);
-    const sc = sun.shadow.camera; sc.left = -55; sc.right = 55; sc.top = 55; sc.bottom = -55; sc.near = 1; sc.far = 260;
+    const sc = sun.shadow.camera, ext = q === 'low' ? 45 : 85; sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext; sc.near = 1; sc.far = 360; this.shadowExt = ext; this.shadowRes = sm;
     sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.04;
     scene.add(hemi, sun, sun.target);
     Object.assign(Game, { renderer, scene, camera });
     this.hemi = hemi; this.sun = sun;
     this.buildSky();
     Rain.init(); FX.init(); LightPool.init();
-    addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+    // Neon parlaması (bloom) — yüksek/orta kalite
+    if (Settings.bloom && q !== 'low') {
+      try {
+        const comp = new EffectComposer(renderer);
+        comp.addPass(new RenderPass(scene, camera));
+        this.bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.6, 0.45, 0.82);
+        comp.addPass(this.bloom); comp.addPass(new OutputPass());
+        this.composer = comp;
+      } catch (e) { console.warn('Bloom kapalı', e); }
+    }
+    addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); this.composer && this.composer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
   },
   buildSky() {
     const geo = new THREE.SphereGeometry(1, 24, 12);
@@ -1362,7 +1454,7 @@ const Mat = {
     const key = 'p' + color + (o.rough ?? '') + (o.metal ?? '') + (o.em ?? '') + (o.tr ?? '');
     let m = this.cache.get(key);
     if (!m) {
-      m = new THREE.MeshStandardMaterial({ color, roughness: o.rough ?? 0.3, metalness: o.metal ?? 0.0, envMapIntensity: 0.9 });
+      m = new THREE.MeshPhysicalMaterial({ color, roughness: o.rough ?? 0.3, metalness: o.metal ?? 0.0, envMapIntensity: 0.9, clearcoat: o.tr || Settings.quality === 'low' ? 0 : 0.5, clearcoatRoughness: 0.2 });
       if (o.em) { m.emissive = new THREE.Color(o.em); m.emissiveIntensity = o.emi ?? 1.2; }
       if (o.tr) { m.transparent = true; m.opacity = o.tr; m.depthWrite = false; }
       this.cache.set(key, m);
@@ -1461,6 +1553,7 @@ const Geo = {
   boxB: (() => { const g = new THREE.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; })(), // tabanı y=0
   cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 14),
   cylLo: new THREE.CylinderGeometry(0.5, 0.5, 1, 8),
+  rbox: new RoundedBoxGeometry(1, 1, 1, 2, 0.14),
   cone: new THREE.ConeGeometry(0.5, 1, 4),
   sphere: new THREE.SphereGeometry(0.5, 12, 8),
   plane: new THREE.PlaneGeometry(1, 1),
@@ -1521,12 +1614,14 @@ const Sky = {
     Render.skyMat.uniforms.top.value.copy(top); Render.skyMat.uniforms.hor.value.copy(hor);
     Render.skyMat.uniforms.sunCol.value.copy(sunC); Render.skyMat.uniforms.cloud.value = this.cloud;
     const sd = new THREE.Vector3(sx * 0.8, sy, 0.45).normalize();
-    // Gece "ay" yönü ışığı: Vice City morumsu ay ışığı
+    // Gece "ay" yönü ışığı: 80ler neon gecesi morumsu ay ışığı
     const lightDir = sy > -0.05 ? sd : new THREE.Vector3(-sx * 0.6, Math.max(0.3, -sy), -0.4).normalize();
     Render.skyMat.uniforms.sunDir.value.copy(sd);
     const p = Game.player ? Game.player.pos : _v1.set(0, 0, 0);
-    Render.sun.position.set(p.x + lightDir.x * 120, p.y + lightDir.y * 120, p.z + lightDir.z * 120);
-    Render.sun.target.position.copy(p);
+    // gölge kamerası oyuncuyu takip eder; texel'e hizalanır (titreme olmaz)
+    const tx = (Render.shadowExt * 2) / Render.shadowRes, sx2 = Math.round(p.x / tx) * tx, sz2 = Math.round(p.z / tx) * tx;
+    Render.sun.position.set(sx2 + lightDir.x * 150, p.y + lightDir.y * 150, sz2 + lightDir.z * 150);
+    Render.sun.target.position.set(sx2, p.y, sz2);
     Render.sun.color.copy(sy > -0.05 ? sunC : new THREE.Color(0x8a7cff));
     Render.sun.intensity = (sy > -0.05 ? lerp(0.4, 2.6, day) : 0.55) * (1 - this.cloud * 0.55);
     Render.hemi.intensity = this.sample(h, 4) * (1 - this.cloud * 0.25) + 0.15;
@@ -1535,8 +1630,8 @@ const Sky = {
     Game.renderer.toneMappingExposure = lerp(1.25, 1.0, day);
     const fogC = hor.clone().lerp(new THREE.Color(0x101018), 0.35);
     Game.scene.fog.color.copy(fogC);
-    Game.scene.fog.near = lerp(60, 25, this.rainAmt);
-    Game.scene.fog.far = lerp(Settings.viewDist, Settings.viewDist * 0.55, this.rainAmt);
+    Game.scene.fog.density = (1.75 / Settings.viewDist) * (1 + this.rainAmt * 0.9 + this.cloud * 0.2);
+    if (Render.bloom) Render.bloom.strength = lerp(0.25, 0.75, SHARED_UNI.uNight.value) + Sky.wet * 0.1;
     Render.sky.position.copy(Game.camera.position);
     // Fırtına şimşeği
     if (w === 'storm') {
@@ -1723,6 +1818,19 @@ const World = {
     return h;
   },
   // Yer seviyesi yüzeyi (teras/çatı değil): arazi + en fazla 3.7 m üstündeki basamaklar
+  // Bir noktayı (ör. toplanabilir eşya) bina içindeyse en yakın kenarın dışına taşır
+  freeSpot(x, z, y = 0) {
+    for (let it = 0; it < 4; it++) {
+      let moved = false;
+      for (const b of this.nearBoxes(x, z)) {
+        if (b.dead || !(x > b.x0 - 0.6 && x < b.x1 + 0.6 && z > b.z0 - 0.6 && z < b.z1 + 0.6) || y >= b.y1 - 0.65 || y + 1.8 <= b.y0) continue;
+        const l = x - b.x0, r = b.x1 - x, f = z - b.z0, k = b.z1 - z, m = Math.min(l, r, f, k);
+        if (m === l) x = b.x0 - 1.4; else if (m === r) x = b.x1 + 1.4; else if (m === f) z = b.z0 - 1.4; else z = b.z1 + 1.4; moved = true;
+      }
+      if (!moved) break;
+    }
+    return [x, z];
+  },
   surfaceAt(x, z) { return this.groundAt(x, z, this.baseHeight(x, z) + 3); },
   // Yatay itme: silindir (r) vs AABB; ayak y, boy hgt
   collide(p, r, hgt = 1.8) {
@@ -1756,7 +1864,7 @@ const World = {
   chunkOf(x, z) {
     const k = Math.floor(x / CHUNK) + ',' + Math.floor(z / CHUNK);
     let c = this.chunks.get(k);
-    if (!c) { c = { key: k, cx: (Math.floor(x / CHUNK) + 0.5) * CHUNK, cz: (Math.floor(z / CHUNK) + 0.5) * CHUNK, bld: [], box: [], neon: [], cyl: [], cone: [], halos: [], group: new THREE.Group() }; this.chunks.set(k, c); }
+    if (!c) { c = { key: k, cx: (Math.floor(x / CHUNK) + 0.5) * CHUNK, cz: (Math.floor(z / CHUNK) + 0.5) * CHUNK, bld: [], box: [], neon: [], cyl: [], cone: [], sph: [], lib: {}, halos: [], group: new THREE.Group() }; this.chunks.set(k, c); }
     return c;
   },
   _m: new THREE.Matrix4(), _q: new THREE.Quaternion(), _s: new THREE.Vector3(), _p: new THREE.Vector3(), _e: new THREE.Euler(),
@@ -1769,6 +1877,37 @@ const World = {
   },
   addCyl(x, y, z, r, h, color, solid = false) { this.chunkOf(x, z).cyl.push([this.mtx(x, y, z, r * 2, h, r * 2), color]); if (solid) this.addBox(x - r, x + r, z - r, z + r, y, y + h); },
   addCone(x, y, z, r, h, color) { this.chunkOf(x, z).cone.push([this.mtx(x, y, z, r * 2, h, r * 2, Math.PI / 4), color]); },
+  // ---- sokak mobilyası: kütüphane GLB'si varsa instanced model, yoksa çok parçalı yedek model
+  addLib(slot, x, y, z, h, ry) { const c = this.chunkOf(x, z); (c.lib[slot] ||= []).push(this.mtx(x, y, z, h, h, h, ry)); },
+  lamp(x, z, dx, dz, lc, light) {
+    const ry = Math.atan2(dx, dz);
+    if (AssetManager.templates.lib_lamp) { this.addLib('lib_lamp', x, 0, z, 3.3, ry); this.addNeon(x + dx * 0.6, 6.1, z + dz * 0.6, 0.6, 0.15, 0.6, lc, light); return; }
+    this.addCyl(x, 0, z, 0.16, 6.4, '#2a2540'); this.addCyl(x, 0, z, 0.32, 0.5, '#2a2540');
+    this.addProp(x + dx * 0.55, 6.25, z + dz * 0.55, dx ? 1.3 : 0.18, 0.16, dz ? 1.3 : 0.18, '#2a2540');
+    this.addNeon(x + dx * 1.05, 5.95, z + dz * 1.05, dx ? 0.9 : 0.5, 0.28, dz ? 0.9 : 0.5, lc, light);
+    this.addHalo(x + dx * 1.05, 5.75, z + dz * 1.05, lc, 5);
+  },
+  tree(x, z) {
+    if (AssetManager.templates.lib_tree) { this.addLib('lib_tree', x, 0, z, rand(2.6, 3.6), rand(0, 6.28)); return; }
+    const g = pick(['#2fd67a', '#4a9a2a', '#6fbf3a', '#3bbf7a']);
+    this.addCyl(x, 0, z, 0.32, 2.6, '#6b4a2a'); this.addCyl(x, 0, z, 0.9, 0.35, '#8a7a6a');
+    this.addSph(x, 3.4, z, 1.9, g); this.addSph(x + 0.7, 4.4, z - 0.4, 1.3, g); this.addSph(x - 0.6, 4.2, z + 0.5, 1.2, g);
+  },
+  bench(x, z, ry) {
+    if (AssetManager.templates.lib_bench) { this.addLib('lib_bench', x, 0, z, 0.6, ry); return; }
+    const along = Math.abs(Math.sin(ry)) > 0.5;
+    this.addProp(x, 0.45, z, along ? 0.6 : 1.8, 0.12, along ? 1.8 : 0.6, '#c9603a'); this.addProp(x + (along ? 0.28 : 0), 0.55, z + (along ? 0 : 0.28), along ? 0.1 : 1.8, 0.5, along ? 1.8 : 0.1, '#c9603a');
+    for (const s of [-0.7, 0.7]) this.addProp(x + (along ? 0 : s), 0, z + (along ? s : 0), 0.12, 0.45, 0.5, '#2a2540');
+  },
+  addSph(x, y, z, r, color) { this.chunkOf(x, z).sph.push([this.mtx(x, y, z, r * 2, r * 1.7, r * 2), color]); },
+  libGeo(slot) {
+    this._libGeo ||= {}; if (this._libGeo[slot] !== undefined) return this._libGeo[slot];
+    const t = AssetManager.templates[slot]; if (!t) return this._libGeo[slot] = null;
+    t.updateMatrixWorld(true); const geos = [], col = new THREE.Color();
+    t.traverse(m => { if (!m.isMesh) return; const g = m.geometry.clone(); g.applyMatrix4(m.matrixWorld); if (!g.attributes.normal) g.computeVertexNormals(); const n = g.attributes.position.count, arr = new Float32Array(n * 3); col.copy(Array.isArray(m.material) ? m.material[0].color : m.material.color || col.set('#ffffff')); for (let i = 0; i < n; i++) arr.set([col.r, col.g, col.b], i * 3); g.setAttribute('color', new THREE.BufferAttribute(arr, 3)); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'color'].includes(k)) g.deleteAttribute(k); if (g.index) geos.push(g.toNonIndexed()); else geos.push(g); });
+    let mg = null; try { mg = geos.length ? mergeGeometries(geos, false) : null; } catch (e) { console.warn('Kütüphane prop birleştirilemedi', slot, e); }
+    return this._libGeo[slot] = mg;
+  },
   addHalo(x, y, z, color, size) { this.chunkOf(x, z).halos.push([x, y, z, color, size]); },
   finalizeChunks() {
     const col = new THREE.Color();
@@ -1780,7 +1919,7 @@ const World = {
       im.computeBoundingSphere(); im.computeBoundingBox && im.computeBoundingBox();
       return im;
     };
-    const propMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.0 });
+    const propMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.0, clearcoat: Settings.quality === 'low' ? 0 : 0.45, clearcoatRoughness: 0.2 });
     const neonMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
     const haloMat = new THREE.PointsMaterial({ size: 1, map: haloTex, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true, toneMapped: false });
     this.haloMat = haloMat;
@@ -1791,6 +1930,12 @@ const World = {
       const n = make(c.neon, Geo.boxB, neonMat); if (n) c.group.add(n);
       const cy = make(c.cyl, cylG, propMat); if (cy) { cy.castShadow = true; c.group.add(cy); }
       const co = make(c.cone, coneG, propMat); if (co) { co.castShadow = true; c.group.add(co); }
+      const sp = make(c.sph, Geo.sphere, propMat); if (sp) { sp.castShadow = true; sp.receiveShadow = true; c.group.add(sp); }
+      for (const slot in c.lib) {
+        const g = this.libGeo(slot); if (!g) continue;
+        const im = new THREE.InstancedMesh(g, this.libMat ||= new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.4, clearcoat: 0.3 }), c.lib[slot].length);
+        c.lib[slot].forEach((m, i) => im.setMatrixAt(i, m)); im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere(); im.castShadow = true; im.receiveShadow = true; c.group.add(im);
+      }
       if (c.halos.length) {
         const g = new THREE.BufferGeometry(); const pos = new Float32Array(c.halos.length * 3), cl = new Float32Array(c.halos.length * 3);
         c.halos.forEach((h, i) => { pos.set([h[0], h[1], h[2]], i * 3); col.set(h[3]); cl.set([col.r, col.g, col.b], i * 3); });
@@ -1945,17 +2090,15 @@ const World = {
     for (let x = -560; x <= 400; x += 80) for (let z = -560; z <= 560; z += 32) {
       if (this.isMountain(x, z) || !this.landAt(x + 9, z) || this.landAt(x + 9, z).bridge) continue;
       const d = districtAt(x, z).id;
-      this.addCyl(x + 8.6, 0, z, 0.15, 6, '#3a3550');
       const lc = d === 'Neon_Boulevard' ? (z % 64 === 0 ? '#ff2fd6' : '#20f0ff') : '#ffd28a';
-      this.addNeon(x + 8.0, 6, z, 1.4, 0.3, 0.5, lc, Math.abs(z) % 96 === 0);
-      this.addHalo(x + 8.0, 5.8, z, lc, 5);
-      if ((d === 'East_Res' || d === 'Old_Bazaar') && R() > 0.5) { this.addCyl(x - 8.6, 0, z + 16, 0.35, 2.5, '#6b4a2a'); this.addCone(x - 8.6, 2.2, z + 16, 2.2, 4.5, pick(['#2fd67a', '#4a9a2a', '#6fbf3a'])); }
+      this.lamp(x + 8.6, z, -1, 0, lc, Math.abs(z) % 96 === 0);
+      if ((d === 'East_Res' || d === 'Old_Bazaar') && R() > 0.5) this.tree(x - 8.6, z + 16);
+      if ((d === 'Neon_Boulevard' || d === 'East_Res') && R() > 0.7) this.bench(x + 9.2, z + 12, Math.PI / 2);
     }
     for (let z = -560; z <= 560; z += 80) for (let x = -560; x <= 400; x += 36) {
       if (this.isMountain(x, z) || !this.landAt(x, z + 9) || this.landAt(x, z + 9).bridge) continue;
-      this.addCyl(x, 0, z + 8.6, 0.15, 6, '#3a3550');
       const lc = districtAt(x, z).id === 'Neon_Boulevard' ? '#ff7ad9' : '#ffd28a';
-      this.addNeon(x, 6, z + 8.0, 0.5, 0.3, 1.4, lc, false); this.addHalo(x, 5.8, z + 8.0, lc, 5);
+      this.lamp(x, z + 8.6, 0, -1, lc, false);
     }
     // Neon Bulvar ana cadde kemerleri
     for (let z = -520; z <= 520; z += 80) {
@@ -2164,6 +2307,7 @@ const World = {
 const FRIEND_CAST = { kaan: 'Hero_Main', ela: 'Ally_Partner', ray: 'Master_Lightning', kor: 'Master_Fire', derya: 'Master_Water', taskin: 'Master_Earth', ayaz: 'Master_Ice', filiz: 'Master_Green', hikmet: 'Mentor_Master', tarik: 'NPC_DojoGuy', noda: 'NPC_NoodleChef', mimar: 'Boss_Architect', kanca: 'Boss_Hook' };
 
 class Figure {
+  static tintCache = new Map();
   constructor(castId, outfit = 'civil', lookOverride = null) {
     this.castId = castId; this.outfit = outfit;
     this.root = new THREE.Group();
@@ -2183,8 +2327,11 @@ class Figure {
   rebuild(lookOverride) {
     this.inner.clear(); this.extras = {}; this.meshes = [];
     const slot = this.castId + (CAST[this.castId]?.looks ? '_' + this.outfit : '');
-    const tpl = AssetManager.instance(slot) || AssetManager.instance(this.castId);
-    if (tpl) {
+    let tpl = AssetManager.instance(slot) || AssetManager.instance(this.castId);
+    this.skinned = false; this.mixer = null; this.bones = null;
+    if (!tpl && Settings.modelMode === 'library' && this.castId !== 'Dummy') { tpl = AssetManager.instance(castLibSlot(this.castId)); if (tpl) this.libSlot = castLibSlot(this.castId); }
+    if (tpl && tpl.userData.skinned) { this.setupSkinned(tpl, this.look(lookOverride)); }
+    else if (tpl) {
       this.custom = true; this.inner.add(tpl);
       this.parts = collectPivots(tpl);
       tpl.traverse(n => { if (n.isMesh) { this.meshes.push(n); if (/mask/i.test(n.name)) this.extras.mask = n; } });
@@ -2192,8 +2339,110 @@ class Figure {
     this.buildUmbrella();
     this.lookData = this.look(lookOverride);
   }
+  // ---------------------------------------------------------- İskeletli (GLB) model
+  setupSkinned(tpl, L) {
+    this.custom = true; this.skinned = true; this.inner.add(tpl); this.parts = {};
+    this.inner.scale.setScalar(L?.scale || 1);
+    // renklendirme (malzemeler figür başına önbellekli klonlanır)
+    const tint = (m, i) => {
+      const n = (m.name || '').toLowerCase();
+      let c = L.torso;
+      if (/joint|grey|gray|metal/.test(n) || i > 0) c = L.plate || L.legs || L.arms;
+      if (/black|eye|dark/.test(n)) return m;
+      const key = (this.libSlot || 'x') + '|' + n + '|' + i + '|' + c + '|' + (m.map ? 'tx' : '');
+      let mm = Figure.tintCache.get(key);
+      if (!mm) {
+        mm = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(c), roughness: 0.32, metalness: 0.05, clearcoat: 0.6, clearcoatRoughness: 0.25, map: m.map || null, envMapIntensity: 1.0 });
+        if (m.map) mm.color.lerp(new THREE.Color(1, 1, 1), 0.55);
+        Figure.tintCache.set(key, mm);
+      }
+      return mm;
+    };
+    tpl.traverse(n => {
+      if (!n.isMesh) return;
+      n.castShadow = true; n.frustumCulled = false;
+      n.material = Array.isArray(n.material) ? n.material.map(tint) : tint(n.material, n.material.name && /joint/i.test(n.material.name) ? 1 : 0);
+      this.meshes.push(n);
+    });
+    // kemikler
+    const bones = {}; const want = {
+      hips: /(^|[^a-z])hips$|pelvis/i, spine: /spine2$|spine1$|chest$|torso$|spine$/i, head: /head$/i,
+      armL: /(left.?arm$)|(upper.?arm.?l$)|(arm.?l$)|(shoulder.?l$)/i, armR: /(right.?arm$)|(upper.?arm.?r$)|(arm.?r$)|(shoulder.?r$)/i,
+      legL: /(left.?up.?leg$)|(upper.?leg.?l$)|(thigh.?l$)|(leg.?l$)/i, legR: /(right.?up.?leg$)|(upper.?leg.?r$)|(thigh.?r$)|(leg.?r$)/i
+    };
+    tpl.traverse(n => { if (!n.isBone) return; for (const k in want) if (!bones[k] && want[k].test(n.name)) bones[k] = n; });
+    this.bones = bones;
+    // animasyon klipleri
+    const clips = tpl.userData.clips || [];
+    this.mixer = new THREE.AnimationMixer(tpl); this.actions = {};
+    const find = (re, not) => clips.find(c => re.test(c.name) && !(not && not.test(c.name)) && !/pose|agree|shake/i.test(c.name));
+    const map = { idle: find(/idle|stand/i), walk: find(/walk/i, /jump/i), run: find(/run/i), jump: find(/jump/i), punch: find(/punch|attack/i), death: find(/death|die/i), sit: find(/sit/i), cheer: find(/dance|wave|thumbs|yes/i) };
+    for (const k in map) if (map[k]) this.actions[k] = this.mixer.clipAction(map[k]);
+    if (this.actions.death) { this.actions.death.setLoop(THREE.LoopOnce, 1); this.actions.death.clampWhenFinished = true; }
+    if (this.actions.jump) { this.actions.jump.setLoop(THREE.LoopOnce, 1); this.actions.jump.clampWhenFinished = true; }
+    if (this.actions.punch) { this.actions.punch.setLoop(THREE.LoopOnce, 1); }
+    this.curKey = null; this.play('idle', 0);
+    // aksesuar: saç + maske kafa kemiğine (insan modeli)
+    if (bones.head && L && this.libSlot !== 'lib_robot' && this.libSlot !== 'lib_soldier') {
+      this.inner.updateMatrixWorld(true);
+      const hq = new THREE.Quaternion(), hs = new THREE.Vector3(), rq = new THREE.Quaternion();
+      bones.head.getWorldQuaternion(hq); bones.head.getWorldScale(hs); this.root.getWorldQuaternion(rq);
+      const g = new THREE.Group(); g.quaternion.copy(hq.invert().multiply(rq));
+      g.scale.setScalar(0.52 * (L.scale || 1) / Math.max(hs.x, 1e-4)); g.position.set(0, 0, 0);
+      bones.head.add(g); this.accRoot = g;
+      if (L.hair) this.hair(g, L.hair);
+      const mc = CAST[this.castId]?.mask || '#333', mask = new THREE.Group(); g.add(mask);
+      this.part(mask, mc, 0.48, 0.2, 0.08, 0, 0.11, 0.21, { geo: Geo.box }); this.part(mask, mc, 0.48, 0.12, 0.46, 0, 0.11, 0, { geo: Geo.box });
+      mask.visible = false; this.extras.mask = mask;
+    }
+    this.parts = {};
+    { const g = new THREE.Group(); g.position.set(-0.43, 1.55, 0); this.inner.add(g); this.parts.arm_R = g; }
+  }
+  play(key, fade = 0.2) {
+    const a = this.actions[key] || this.actions.idle; if (!a || this.curAct === a) { this.curKey = key; return; }
+    a.reset(); a.enabled = true; a.setEffectiveWeight(1); a.play();
+    if (this.curAct && fade > 0) this.curAct.crossFadeTo(a, fade, false); else if (this.curAct) this.curAct.stop();
+    this.curAct = a; this.curKey = key;
+  }
+  rotWorld(bone, axis, ang) {
+    if (!bone || !ang) return;
+    const pq = new THREE.Quaternion(); if (bone.parent) bone.parent.getWorldQuaternion(pq);
+    const w = new THREE.Quaternion().setFromAxisAngle(axis, ang);
+    const inv = pq.clone().invert();
+    bone.quaternion.premultiply(inv.multiply(w).multiply(pq));
+  }
+  animateSkinned(dt, st) {
+    const a = st.anim;
+    const key = { idle: 'idle', walk: 'walk', umbrella: 'walk', run: 'run', jump: 'jump', fall: 'jump', glide: 'idle', spin: 'idle', drive: 'sit', ride: 'sit', sit: 'sit', focus: 'sit', kneel: 'sit', cheer: 'cheer', hurt: 'idle', cower: 'idle', swim: 'walk', ko: 'death' }[a] || 'idle';
+    if (key !== this.curKey) this.play(key, key === 'death' ? 0.1 : 0.22);
+    const act = this.curAct;
+    if (act) { if (key === 'walk') act.timeScale = clamp(st.speed / 1.7, 0.6, 1.8); else if (key === 'run') act.timeScale = clamp(st.speed / 6.5, 0.8, 1.6); else act.timeScale = 1; }
+    this.mixer.update(dt);
+    // katmanlı prosedürel ekler (kombo, şok dalgası, süzülme, kasırga, isabet)
+    this.root.updateMatrixWorld(true);
+    const rq = new THREE.Quaternion(); this.root.getWorldQuaternion(rq);
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(rq), fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(rq);
+    const B = this.bones; let lean = 0;
+    if (st.punch > 0) { const k = Math.sin((1 - st.punch) * Math.PI); this.rotWorld(st.punchSide ? B.armL : B.armR, right, -1.5 * k); this.rotWorld(B.spine, new THREE.Vector3(0, 1, 0), (st.punchSide ? -0.35 : 0.35) * k); }
+    if (st.kick > 0) { const k = Math.sin((1 - st.kick) * Math.PI); this.rotWorld(B.legR, right, -1.3 * k); lean -= 0.2 * k; }
+    if (st.slam > 0) { this.rotWorld(B.armL, right, -2.6 * st.slam); this.rotWorld(B.armR, right, -2.6 * st.slam); }
+    if (st.cast > 0) { this.rotWorld(B.armL, right, -1.4 * st.cast); this.rotWorld(B.armR, right, -1.4 * st.cast); }
+    if (a === 'glide' || a === 'spin') { this.rotWorld(B.armL, fwd, 1.2); this.rotWorld(B.armR, fwd, -1.2); if (a === 'glide') lean += 0.45; }
+    if ((a === 'drive' || a === 'ride' || a === 'sit' || a === 'focus') && !this.actions.sit) { this.rotWorld(B.legL, right, -1.4); this.rotWorld(B.legR, right, -1.4); this.rotWorld(B.armL, right, -1.1); this.rotWorld(B.armR, right, -1.1); }
+    if (a === 'cheer' && !this.actions.cheer) { this.rotWorld(B.armL, right, -2.8 + Math.sin(Game.t * 8) * 0.3); this.rotWorld(B.armR, right, -2.8 - Math.sin(Game.t * 8) * 0.3); }
+    if (a === 'hurt' || a === 'cower') { this.rotWorld(B.armL, right, -2.4); this.rotWorld(B.armR, right, -2.4); lean += 0.5; }
+    if (a === 'umbrella') this.rotWorld(B.armR, right, -1.2);
+    if (a === 'jump' && !this.actions.jump) { this.rotWorld(B.armL, right, -2.2); this.rotWorld(B.armR, right, -2.2); }
+    if (a === 'ko' && !this.actions.death) lean += 0;
+    if (st.hit > 0) lean -= 0.35 * st.hit;
+    if (a === 'run') lean += 0.12;
+    this.rotWorld(B.spine, right, lean);
+    this.inner.position.y = lerp(this.inner.position.y, (a === 'sit' || a === 'focus') && !this.actions.sit ? -0.45 : a === 'swim' ? -0.9 : 0, Math.min(1, dt * 10));
+    this.inner.rotation.x = lerp(this.inner.rotation.x, a === 'swim' ? 1.2 : 0, Math.min(1, dt * 6));
+  }
   part(parent, color, w, h, d, x, y, z, opts) {
-    const m = new THREE.Mesh(opts?.geo || Geo.box, opts?.mat || Mat.plastic(color, opts));
+    const geo = opts?.geo || (Math.min(w, h, d) > 0.12 ? Geo.rbox : Geo.box);
+    const m = new THREE.Mesh(geo, opts?.mat || Mat.plastic(color, opts));
     m.scale.set(w, h, d); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = false;
     if (opts?.rot) m.rotation.set(...opts.rot);
     parent.add(m); this.meshes.push(m); return m;
@@ -2336,6 +2585,7 @@ class Figure {
   setOutfit(o) { if (this.outfit === o) return; const mask = this.extras.mask?.visible; this.outfit = o; this.rebuild(); this.setMask(!!mask); }
   // ---------------------------------------------------------- Poz animasyonu
   animate(dt, st) {
+    if (this.skinned) return this.animateSkinned(dt, st);
     const P = this.pose, sp = st.speed || 0;
     this.phase += dt * (2.2 + sp * 1.15);
     const s = Math.sin(this.phase), c = Math.cos(this.phase);
@@ -2383,17 +2633,17 @@ function civilianLook(seed) {
 //  INPUT MANAGER — Klavye+Fare · Gamepad (standart eşleme) · Dokunmatik
 //  Aktif cihaz otomatik algılanır; arayüz ipuçları buna göre güncellenir.
 // ============================================================================
-const ACTIONS = ['jump', 'attack', 'heavy', 'interact', 'vehicle', 'metal', 'spin', 'dragon', 'sprint', 'wheel', 'wardrobe', 'mask', 'phone', 'callally', 'pause', 'horn', 'radio', 'handbrake', 'descend', 'next', 'prev'];
+const ACTIONS = ['dash', 'jump', 'attack', 'heavy', 'interact', 'vehicle', 'metal', 'spin', 'dragon', 'sprint', 'wheel', 'wardrobe', 'mask', 'phone', 'callally', 'pause', 'horn', 'radio', 'handbrake', 'descend', 'next', 'prev'];
 const KEYMAP = {
   Space: 'jump', KeyJ: 'attack', KeyL: 'heavy', KeyE: 'interact', KeyF: 'vehicle', KeyR: 'metal', Digit1: 'spin', Digit2: 'dragon',
   ShiftLeft: 'sprint', ShiftRight: 'sprint', KeyQ: 'wheel', KeyO: 'wardrobe', KeyK: 'mask', Tab: 'phone', KeyP: 'phone', KeyG: 'callally',
-  Escape: 'pause', KeyH: 'horn', KeyN: 'radio', ControlLeft: 'descend', KeyC: 'descend', Enter: 'next'
+  Escape: 'pause', KeyH: 'horn', KeyN: 'radio', ControlLeft: 'descend', KeyC: 'dash', Enter: 'next'
 };
 const PAD = { 0: 'jump', 2: 'attack', 3: 'heavy', 1: 'interact', 5: 'metal', 4: 'wheel', 7: 'attack', 6: 'heavy', 12: 'spin', 13: 'dragon', 14: 'mask', 15: 'wardrobe', 8: 'phone', 9: 'pause', 10: 'sprint', 11: 'vehicle' };
 const HINTS = {
-  kbm: { jump: 'Boşluk', attack: 'Sol Tık', heavy: 'Sağ Tık', interact: 'E', vehicle: 'F', metal: 'R', spin: '1', dragon: '2', wheel: 'Q', wardrobe: 'O', mask: 'K', phone: 'Tab', callally: 'G', sprint: 'Shift', pause: 'Esc' },
-  pad: { jump: 'Ⓐ', attack: 'Ⓧ/RT', heavy: 'Ⓨ/LT', interact: 'Ⓑ', vehicle: 'R3', metal: 'RB', spin: '⬆', dragon: '⬇', wheel: 'LB', wardrobe: '➡', mask: '⬅', phone: 'Back', callally: '—', sprint: 'L3', pause: 'Start' },
-  touch: { jump: 'ZIPLA', attack: 'VUR', heavy: 'ŞOK', interact: 'E', vehicle: 'ARAÇ', metal: 'METAL', spin: 'KASIRGA', dragon: 'EJDER', wheel: '🗡', wardrobe: '👕', mask: '😷', phone: '📱', callally: '📞', sprint: 'KOŞ', pause: '⏸' }
+  kbm: { dash: 'C', jump: 'Boşluk', attack: 'Sol Tık', heavy: 'Sağ Tık', interact: 'E', vehicle: 'F', metal: 'R', spin: '1', dragon: '2', wheel: 'Q', wardrobe: 'O', mask: 'K', phone: 'Tab', callally: 'G', sprint: 'Shift', pause: 'Esc' },
+  pad: { dash: 'Ⓑ', jump: 'Ⓐ', attack: 'Ⓧ/RT', heavy: 'Ⓨ/LT', interact: 'Ⓑ', vehicle: 'R3', metal: 'RB', spin: '⬆', dragon: '⬇', wheel: 'LB', wardrobe: '➡', mask: '⬅', phone: 'Back', callally: '—', sprint: 'L3', pause: 'Start' },
+  touch: { dash: 'ATIL', jump: 'ZIPLA', attack: 'VUR', heavy: 'ŞOK', interact: 'E', vehicle: 'ARAÇ', metal: 'METAL', spin: 'KASIRGA', dragon: 'EJDER', wheel: '🗡', wardrobe: '👕', mask: '😷', phone: '📱', callally: '📞', sprint: 'KOŞ', pause: '⏸' }
 };
 const Input = {
   device: 'kbm', keys: {}, down: {}, prev: {}, mouse: { dx: 0, dy: 0, locked: false, wheel: 0 },
@@ -2543,8 +2793,10 @@ class Actor {
     this.hp -= amount; this.st.hit = 1; this.stun = Math.max(this.stun, opt.stun || 0.18);
     if (opt.knock && from) { const dx = this.pos.x - from.pos.x, dz = this.pos.z - from.pos.z, l = Math.hypot(dx, dz) || 1; this.kb.set(dx / l * opt.knock, 0, dz / l * opt.knock); if (opt.lift) this.vel.y = opt.lift; }
     FX.burst(_v1.set(this.pos.x, this.pos.y + 1.2, this.pos.z), this.kind === 'player' && this.metalOn ? '#e8f0ff' : opt.color || '#ffd23b', 6, 5, 0.12, 0.4);
-    if (from && from.kind === 'player') Crime.onPlayerHit(this);
+    if (this.kind === 'player') Cam.shake = Math.max(Cam.shake, 0.14); else if (from && from.kind === 'player') Cam.shake = Math.max(Cam.shake, 0.06);
+    if (from && from.kind === 'player') { if (this.hp - amount <= 0 && this.hp > 0) this._koHit = true; }
     if (this.boss && this.def && this.def.onHit) this.def.onHit(this);
+    if (from && from.kind === 'player' && !opt.noCrime) Crime.onPlayerHit(this, opt);
     if (this.hp <= 0) this.die(from);
     else if (this.ai && from && this.kind !== 'player') { this.ai.aggro = from; if (this.kind === 'civ') Population.panic(this, from.pos); }
   }
@@ -2574,7 +2826,7 @@ class Actor {
       return;
     }
     // Yatay hız
-    const acc = this.onGround || this.fly ? 12 : 3.5;
+    const acc = this.onGround || this.fly ? (this.accel || 12) : (this.kind === 'player' ? 9 : 3.5);
     const wx = this.stun > 0 ? 0 : this.want.x, wz = this.stun > 0 ? 0 : this.want.z;
     this.vel.x = lerp(this.vel.x, wx, Math.min(1, dt * acc)); this.vel.z = lerp(this.vel.z, wz, Math.min(1, dt * acc));
     this.pos.x += (this.vel.x + this.kb.x) * dt; this.pos.z += (this.vel.z + this.kb.z) * dt;
@@ -2584,7 +2836,7 @@ class Actor {
       const g = World.groundAt(this.pos.x, this.pos.z, this.pos.y);
       const ty = (this.flyY ?? g + 3.2); this.pos.y = lerp(this.pos.y, Math.max(ty, g + 1.5) + Math.sin(Game.t * 2 + this.yaw) * 0.3, dt * 3); this.onGround = false;
     } else {
-      if (this.gliding) this.vel.y = Math.max(this.vel.y - 6 * dt, -2.0); else this.vel.y -= 24 * dt;
+      if (this.gliding) this.vel.y = Math.max(this.vel.y - 6 * dt, -2.0); else this.vel.y -= (this.kind === 'player' ? 30 : 24) * dt;
       this.pos.y += this.vel.y * dt;
     }
     World.collide(this.pos, this.radius, this.height);
@@ -2615,7 +2867,7 @@ class Actor {
     r.visible = !this.hidden;
     if (this.hidden) return;
     r.position.copy(this.pos);
-    if (!this.alive) { r.rotation.set(-Math.PI / 2 * Math.min(1, this.koT * 4), this.yaw, 0); r.position.y += 0.25; }
+    if (!this.alive) { if (this.fig.skinned && this.fig.actions.death) r.rotation.set(0, this.yaw, 0); else { r.rotation.set(-Math.PI / 2 * Math.min(1, this.koT * 4), this.yaw, 0); r.position.y += 0.25; } }
     else { r.rotation.x = 0; r.rotation.z = 0; if (this.spinT > 0) { this.spinAng = (this.spinAng || 0) + dt * 22; r.rotation.y = this.spinAng; } else r.rotation.y = this.yaw; }
     this.fig.setUmbrella(this.umbrella && this.alive);
     // Mesafe tabanlı animasyon LOD
@@ -2710,7 +2962,12 @@ const Sound = {
 };
 
 // ---------------------------------------------------------------- Kamera
+function smoothDampV(cur, target, vel, t, dt) {
+  const o = 2 / Math.max(0.0001, t), x = o * dt, e = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
+  for (const k of ['x', 'y', 'z']) { const ch = cur[k] - target[k], tmp = (vel[k] + o * ch) * dt; vel[k] = (vel[k] - o * tmp) * e; cur[k] = target[k] + (ch + tmp) * e; }
+}
 const Cam = {
+  cv: new THREE.Vector3(), lv: new THREE.Vector3(),
   yaw: Math.PI, pitch: 0.28, dist: 6.5, cur: new THREE.Vector3(), look: new THREE.Vector3(), shake: 0, override: null,
   update(dt) {
     if (this.override) return; // sinematik oynatıcı kontrol ediyor
@@ -2733,12 +2990,15 @@ const Cam = {
       if (blocked) { tMax = Math.max(0.12, (i - 1) / 10); break; }
     }
     desired.lerpVectors(target, desired, tMax);
-    this.cur.lerp(desired, Math.min(1, dt * 12));
-    this.look.lerp(target, Math.min(1, dt * 16));
+    // yaylı (smooth damp) takip — gecikmesiz ve sarsıntısız; engelde anında yaklaş
+    const st = p.vehicle ? 0.14 : p.dragon ? 0.2 : 0.07;
+    if (tMax < 1 && this.cur.distanceTo(target) > desired.distanceTo(target)) this.cur.copy(desired);
+    else smoothDampV(this.cur, desired, this.cv, st, dt);
+    smoothDampV(this.look, target, this.lv, 0.04, dt);
     const cam = Game.camera; cam.position.copy(this.cur);
     if (this.shake > 0) { this.shake -= dt; cam.position.x += rand(-1, 1) * this.shake * 0.5; cam.position.y += rand(-1, 1) * this.shake * 0.5; }
     cam.lookAt(this.look);
-    const fov = p.vehicle ? 62 + clamp(p.vehicle.speed, 0, 50) * 0.25 : p.dragon ? 72 : 62;
+    const fov = p.vehicle ? 62 + clamp(p.vehicle.speed, 0, 50) * 0.28 : p.dragon ? 74 : (p.dashT > 0 ? 74 : 62 + clamp(Math.hypot(p.vel.x, p.vel.z) - 6, 0, 6) * 1.1);
     if (Math.abs(cam.fov - fov) > 0.1) { cam.fov = lerp(cam.fov, fov, dt * 3); cam.updateProjectionMatrix(); }
   },
   snap() { const p = Game.player; if (!p) return; this.cur.set(p.pos.x + Math.sin(this.yaw) * 6, p.pos.y + 3, p.pos.z + Math.cos(this.yaw) * 6); this.look.set(p.pos.x, p.pos.y + 1.6, p.pos.z); },
@@ -2750,7 +3010,7 @@ const Player = {
   a: null, energy: 100, maxEnergy: 100, wheelOpen: false, lastSafe: null,
   create(pos) {
     const a = new Actor({ kind: 'player', team: 'player', cast: 'Hero_Main', outfit: S.outfit, pos, hp: 120, persistent: true });
-    a.fig.setMask(S.mask); a.persistent = true; a.spinT = 0;
+    a.fig.setMask(S.mask); a.persistent = true; a.spinT = 0; a.accel = 34;
     a.tornado = this.makeTornado('#c9d3df'); Game.scene.add(a.tornado);
     Game.player = this.a = a; this.applyGymBonus();
     return a;
@@ -2775,14 +3035,23 @@ const Player = {
     const fw = Cam.forward(), rt = _v2.set(-fw.z, 0, fw.x);
     const dir = _v3.set(fw.x * my + rt.x * mx, 0, fw.z * my + rt.z * mx);
     const mag = Math.min(1, dir.length());
-    let speed = Input.isDown('sprint') ? 9.0 : 4.6;
+    let speed = Input.isDown('sprint') ? 11.5 : 6.2;
     if (a.metalOn) speed *= 0.72; if (a.spinT > 0) speed = 10; if (a.swim) speed = 3.2;
-    if (mag > 0.05) { dir.normalize(); a.want.set(dir.x * speed * mag, 0, dir.z * speed * mag); a.yaw = angLerp(a.yaw, Math.atan2(dir.x, dir.z), Math.min(1, dt * 14)); }
+    if (mag > 0.05) { dir.normalize(); a.want.set(dir.x * speed * mag, 0, dir.z * speed * mag); a.yaw = angLerp(a.yaw, Math.atan2(dir.x, dir.z), Math.min(1, dt * 22)); }
     else a.want.set(0, 0, 0);
     if (a.poseOverride && mag > 0.1) a.poseOverride = null;
     // Zıplama / süzülme
     a.gliding = false;
-    if (ctl && Input.pressed('jump') && (a.onGround || a.swim)) { a.vel.y = a.swim ? 6 : 8.6; a.onGround = false; Sound.beep(300, 0.06, 'sine', 0.04); }
+    // atılma (dash): kısa, hızlı, kısa dokunulmazlık
+    a.dashT = Math.max(0, (a.dashT || 0) - dt); a.dashCd = Math.max(0, (a.dashCd || 0) - dt);
+    const dashPressed = ctl && (Input.pressed('dash') || (Input.device === 'pad' && Input.pressed('interact') && !Interact.cur));
+    if (dashPressed && a.dashCd <= 0 && this.energy >= 8 && !a.swim) {
+      this.energy -= 8; a.dashT = 0.2; a.dashCd = 0.55; a.invuln = true; setTimeout(() => { a.invuln = false; }, 220);
+      const dd = mag > 0.05 ? _v2.set(dir.x, 0, dir.z) : _v2.set(Math.sin(a.yaw), 0, Math.cos(a.yaw)); a.yaw = Math.atan2(dd.x, dd.z);
+      a.vel.x = dd.x * 22; a.vel.z = dd.z * 22; FX.ring(a.pos, '#c9d3df', 2.5, 0.25); Sound.beep(420, 0.08, 'triangle', 0.05);
+    }
+    if (a.dashT > 0) { a.want.set(Math.sin(a.yaw) * 22, 0, Math.cos(a.yaw) * 22); if (Math.random() < 0.8) FX.trail(_v1.set(a.pos.x, a.pos.y + 1, a.pos.z), a.metalOn ? '#e8f0ff' : '#7a5cff', 0.25, 0.3); }
+    if (ctl && Input.pressed('jump') && (a.onGround || a.swim)) { a.vel.y = a.swim ? 6 : 10.2; a.onGround = false; Sound.beep(300, 0.06, 'sine', 0.04); }
     if (ctl && S.abilities.glide && !a.onGround && Input.isDown('jump') && a.vel.y < 0) {
       a.gliding = true; const f = _v2.set(Math.sin(a.yaw), 0, Math.cos(a.yaw)); a.want.addScaledVector(f, 7);
       if (Math.random() < 0.4) FX.trail(_v1.set(a.pos.x, a.pos.y + 1.2, a.pos.z), '#7fffe0', 0.15, 0.5);
@@ -2876,7 +3145,7 @@ const Player = {
     setTimeout(async () => {
       await UI.fade(1);
       const a = this.a; a.alive = true; a.hp = a.maxHp; this.energy = 100; this.metalOff();
-      S.wanted = 0; changeMoney(-Math.floor(S.money * 0.1));
+      Crime.clear(); changeMoney(-Math.floor(S.money * 0.1));
       const sp = this.respawnPoint(); a.pos.set(sp[0], World.surfaceAt(sp[0], sp[1]), sp[1]); a.vel.set(0, 0, 0);
       Cam.snap(); Population.clearHostiles(); saveGame();
       await UI.fade(0);
@@ -2919,7 +3188,7 @@ const Ally = {
     if (a.vehicle && !p.vehicle) Vehicles.exit(a, false);
     a.hidden = !!p.dragon; if (p.dragon) { a.pos.copy(p.pos); return; }
     const d = a.distTo(p);
-    if (d > 70 || Math.abs(a.pos.y - p.pos.y) > 12) { a.pos.set(p.pos.x - Math.sin(p.yaw) * 3, p.pos.y, p.pos.z - Math.cos(p.yaw) * 3); a.vel.set(0, 0, 0); FX.burst(_v1.copy(a.pos).setY(a.pos.y + 1), '#7fffe0', 14, 5); }
+    if (d > 45 || Math.abs(a.pos.y - p.pos.y) > 12 || (a._stuck > 1 && d > 15)) { a.pos.set(p.pos.x - Math.sin(p.yaw) * 3, p.pos.y, p.pos.z - Math.cos(p.yaw) * 3); a.vel.set(0, 0, 0); FX.burst(_v1.copy(a.pos).setY(a.pos.y + 1), '#7fffe0', 14, 5); }
     a.umbrella = Sky.rainAmt > 0.3 && !Game.combat && S.outfit === 'civil';
     // Hedef
     let tgt = null, td = 22 * 22;
@@ -2936,12 +3205,36 @@ const Ally = {
     } else {
       const side = _v1.set(p.pos.x + Math.cos(p.yaw) * 2.2 - Math.sin(p.yaw) * 1.6, 0, p.pos.z - Math.sin(p.yaw) * 2.2 - Math.cos(p.yaw) * 1.6);
       const dd = Math.sqrt(dist2(side.x, side.z, a.pos.x, a.pos.z));
-      if (dd > 1.2) this.moveTo(a, side, dd > 8 ? 9 : dd > 3 ? 5.5 : 3.5); else { a.want.set(0, 0, 0); a.yaw = angLerp(a.yaw, p.yaw, dt * 3); }
+      const psp = Math.hypot(p.vel.x, p.vel.z);
+      if (dd > 1.0) this.moveTo(a, side, dd > 7 ? 12.5 : dd > 3 ? Math.max(6.5, psp * 1.1) : Math.max(3.5, psp)); else { a.want.set(0, 0, 0); a.yaw = angLerp(a.yaw, p.yaw, dt * 3); }
       if (p.vel.y > 4 && a.onGround && d < 6) a.vel.y = 8.6;
     }
     a.gliding = !a.onGround && a.vel.y < 0 && S.abilities.glide;
   },
-  moveTo(a, t, sp) { const dx = t.x - a.pos.x, dz = t.z - a.pos.z, l = Math.hypot(dx, dz) || 1; a.want.set(dx / l * sp, 0, dz / l * sp); a.yaw = angLerp(a.yaw, Math.atan2(dx, dz), 0.2); }
+  // Yönlendirme (steering): önü tara, engel/su varsa sağa-sola sap; takılırsa yan adım at
+  blocked(x, z, y) {
+    if (World.baseHeight(x, z) < WATER_Y && World.groundAt(x, z, y + 0.7) < WATER_Y) return true;
+    for (const b of World.nearBoxes(x, z)) if (!b.dead && x > b.x0 - 0.35 && x < b.x1 + 0.35 && z > b.z0 - 0.35 && z < b.z1 + 0.35 && y < b.y1 - 0.65 && y + 1.8 > b.y0) return true;
+    return false;
+  },
+  moveTo(a, t, sp) {
+    let dx = t.x - a.pos.x, dz = t.z - a.pos.z; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
+    if (a.fly) { a.want.set(dx * sp, 0, dz * sp); a.yaw = angLerp(a.yaw, Math.atan2(dx, dz), 0.2); return; }
+    const look = Math.min(l, 1.8);
+    if (this.blocked(a.pos.x + dx * look, a.pos.z + dz * look, a.pos.y)) {
+      const side = a._steerSide || (a._steerSide = Math.random() < 0.5 ? 1 : -1);
+      let ok = false;
+      outer: for (const ang of [0.6, 1.1, 1.6, 2.2]) for (const sd of [side, -side]) {
+        const c = Math.cos(ang * sd), s2 = Math.sin(ang * sd), nx = dx * c - dz * s2, nz = dx * s2 + dz * c;
+        if (!this.blocked(a.pos.x + nx * 1.6, a.pos.z + nz * 1.6, a.pos.y)) { dx = nx; dz = nz; ok = true; a._steerSide = sd; break outer; }
+      }
+    }
+    // takılma algılama
+    const moving = Math.hypot(a.vel.x, a.vel.z);
+    if (sp > 1 && moving < 0.35 && a.onGround) a._stuck = (a._stuck || 0) + Game.dt; else a._stuck = Math.max(0, (a._stuck || 0) - Game.dt);
+    if (a._stuck > 1.2) { a._stuck = 0; a._steerSide = -(a._steerSide || 1); if (a.kind === 'civ' && a.ai && a.ai.mode === 'walk') { const n = World.roadNodes[a.ai.to]; if (n && n.n.length) { a.ai.from = a.ai.to; a.ai.to = pick(n.n); } } a.vel.x += -dz * 3 * a._steerSide; a.vel.z += dx * 3 * a._steerSide; }
+    a.want.set(dx * sp, 0, dz * sp); a.yaw = angLerp(a.yaw, Math.atan2(dx, dz), 0.25);
+  }
 };
 
 // ---------------------------------------------------------------- Dost NPC'ler (ustalar vb.)
@@ -3003,6 +3296,7 @@ const Enemies = {
         continue;
       }
       if (tgt.kind === 'player' || tgt.kind === 'ally') Game.combat = true;
+      if (a.kind === 'police' && tgt.kind === 'player' && !Crime.seen && Crime.lastPos && a.distTo(tgt) > 12) { Ally.moveTo(a, Crime.lastPos, a.moveSpeed * 0.9); continue; }
       const d = a.distTo(tgt);
       a.face(tgt.pos.x, tgt.pos.z, Math.min(1, dt * 8));
       if (a.boss && a.def && a.def.think) { a.def.think(a, tgt, dt, d); continue; }
@@ -3048,47 +3342,86 @@ const Bosses = {
   } }
 };
 
-// ---------------------------------------------------------------- Suç & aranma
+// ---------------------------------------------------------------- WantedSystem (ısı tabanlı aranma)
+// Suçlar "ısı" (0..100) üretir; yıldızlar eşiklerden türetilir. Isı yalnızca tanık (polis görüş
+// hattı ya da ihbar eden sivil) varsa eklenir. Polis görmüyorsa arama yarıçapı dışında hızlı,
+// içinde yavaş soğur. isRecognizedNinja=true iken ısı oluşmaz, polis yalnızca suçlulara odaklanır.
+const HEAT_STARS = [12, 30, 50, 70, 88];
+const CRIME_W = { civAssault: 6, civKO: 10, copAssault: 12, copKO: 20, weapon: 4, carjack: 10, bump: 1.5, runover: 9, zone: 28 };
 const Crime = {
-  lastSeen: 0, decayT: 0,
-  onPlayerHit(t) {
-    if (S.isRecognizedNinja) { if (t.team === 'civ') { changeRep(-1); } return; }
-    if (t.team === 'civ' || t.team === 'police') this.commit(t.team === 'police' ? 1 : (S.wanted ? 0.34 : 1), t.team === 'police' ? 'polise saldırı' : 'sivile saldırı');
+  lastSeen: -999, decayT: 0, lastPos: null, pending: [], seen: false,
+  starsOf(h) { let n = 0; for (const t of HEAT_STARS) if (h >= t) n++; return n; },
+  get stars() { return S.wanted; },
+  searchRadius() { return 40 + S.wanted * 25; },
+  policeWitness(pos, r = 45) {
+    for (const a of Game.actors) if (a.kind === 'police' && a.alive && dist2(a.pos.x, a.pos.z, pos.x, pos.z) < r * r && World.lineClear(a.pos.x, a.pos.z, pos.x, pos.z, a.pos.y + 1.5)) return a;
+    return null;
   },
-  weaponSeen() { const p = Game.player.pos; if (Game.actors.some(a => a.kind === 'police' && a.alive && dist2(a.pos.x, a.pos.z, p.x, p.z) < 30 * 30)) this.commit(0.25, 'silah kullanımı'); },
-  zone(name) { if (S.isRecognizedNinja) return; if (S.wanted < 2) { this.commit(2 - S.wanted, name); } },
-  commit(amount, why) {
+  civWitness(pos, r = 26) {
+    for (const c of Population.civs) if (c.alive && c.ai.mode !== 'cower' && dist2(c.pos.x, c.pos.z, pos.x, pos.z) < r * r && World.lineClear(c.pos.x, c.pos.z, pos.x, pos.z, c.pos.y + 1.5)) return c;
+    return null;
+  },
+  onPlayerHit(t, opt = {}) {
+    if (S.isRecognizedNinja) { if (t.team === 'civ') changeRep(-0.5); return; }
+    if (t.team !== 'civ' && t.team !== 'police') return;
+    let w;
+    if (opt.vehicle) w = opt.speed > 10 ? CRIME_W.runover : CRIME_W.bump;
+    else w = t.team === 'police' ? CRIME_W.copAssault : CRIME_W.civAssault;
+    if (t.hp <= 0) w += t.team === 'police' ? CRIME_W.copKO : CRIME_W.civKO;
+    // aynı hedefe art arda vuruşlar daha az ısı ekler
+    const now = Game.t; if (t._lastCrime && now - t._lastCrime < 1.5 && t.hp > 0) w *= 0.35; t._lastCrime = now;
+    this.commit(w, t.team === 'police' ? 'polise saldırı' : opt.vehicle ? 'yayaya çarpma' : 'sivile saldırı');
+  },
+  weaponSeen() { this.commit(CRIME_W.weapon, 'silah kullanımı', true); },
+  zone(name) { if (S.isRecognizedNinja) return; if (S.heat < HEAT_STARS[1]) this.commit(HEAT_STARS[1] + 2 - S.heat, name, true, true); },
+  commit(amount, why, copOnly = false, force = false) {
     if (S.isRecognizedNinja) return;
-    // Maske + ninja kostümü: tanık polis yoksa yarı etki
     const p = Game.player.pos;
-    const cop = Game.actors.some(a => a.kind === 'police' && a.alive && dist2(a.pos.x, a.pos.z, p.x, p.z) < 50 * 50);
-    if (S.mask && S.outfit === 'ninja' && !cop) amount *= 0.5;
-    const before = Math.floor(S.wanted);
-    S.wanted = clamp(S.wanted + amount, 0, 5); S.stats.crimes++;
-    this.lastSeen = Game.t;
-    if (Math.floor(S.wanted) > before) { UI.toast('🚨 Aranma seviyesi: ' + '★'.repeat(Math.floor(S.wanted)) + ' (' + why + ')'); logEvent('wanted', RADIO.news.wanted); }
+    const cop = force || this.policeWitness(p);
+    if (cop) return this.addHeat(amount, why);
+    if (copOnly) return;
+    const civ = this.civWitness(p);
+    if (!civ) return; // tanık yok → suç fark edilmedi
+    const k = S.mask && S.outfit === 'ninja' ? 0.35 : S.mask ? 0.6 : 1;
+    // sivil ihbarı birkaç saniye sonra gelir (tanık KO olursa ihbar düşer)
+    this.pending.push({ t: Game.t + 3, amount: amount * 0.7 * k, why: why + ' (ihbar)', civ, pos: p.clone() });
   },
-  clear() { S.wanted = 0; for (const a of Game.actors.slice()) if (a.kind === 'police' && a.tag === 'wanted') a.remove(); Vehicles.clearPolice(); },
+  addHeat(amount, why) {
+    const before = S.wanted;
+    S.heat = clamp((S.heat || 0) + amount, 0, 100); S.stats.crimes++;
+    S.wanted = this.starsOf(S.heat);
+    this.lastSeen = Game.t; this.lastPos = Game.player.pos.clone();
+    if (S.wanted > before) { UI.toast('🚨 Aranma: ' + '★'.repeat(S.wanted) + ' (' + why + ')'); logEvent('wanted', RADIO.news.wanted); }
+  },
+  setStars(n) { if (S.isRecognizedNinja) return; S.heat = Math.max(S.heat || 0, HEAT_STARS[n - 1] + 3); S.wanted = this.starsOf(S.heat); this.lastSeen = Game.t; this.lastPos = Game.player.pos.clone(); },
+  clear() { S.heat = 0; S.wanted = 0; this.pending = []; this.lastPos = null; for (const a of Game.actors.slice()) if (a.kind === 'police' && a.tag === 'wanted') a.remove(); Vehicles.clearPolice(); },
   update(dt) {
-    if (S.isRecognizedNinja && S.wanted > 0) this.clear();
-    if (S.wanted <= 0) return;
+    if (S.isRecognizedNinja) { if (S.heat > 0 || S.wanted > 0) this.clear(); return; }
+    // bekleyen ihbarlar
+    for (let i = this.pending.length - 1; i >= 0; i--) { const r = this.pending[i]; if (Game.t >= r.t) { this.pending.splice(i, 1); if (r.civ.alive) this.addHeat(r.amount, r.why); } }
+    if ((S.heat || 0) <= 0) { S.wanted = 0; return; }
     const p = Game.player.pos;
-    // polis görüş kontrolü
-    const seen = Game.actors.some(a => a.kind === 'police' && a.alive && dist2(a.pos.x, a.pos.z, p.x, p.z) < 35 * 35 && World.lineClear(a.pos.x, a.pos.z, p.x, p.z, a.pos.y + 1.5));
-    if (seen) this.lastSeen = Game.t;
-    const hideTime = S.mask ? 9 : 14;
-    if (Game.t - this.lastSeen > hideTime) { this.decayT += dt; if (this.decayT > 6) { this.decayT = 0; S.wanted = Math.max(0, Math.floor(S.wanted - 0.01)); if (S.wanted <= 0) { this.clear(); UI.toast('✅ Polis izini kaybetti'); } } }
-    // polis takviyesi
-    const want = Math.min(10, Math.ceil(S.wanted) * 2);
+    this.seen = !!this.policeWitness(p, 38);
+    if (this.seen) { this.lastSeen = Game.t; this.lastPos = p.clone(); }
+    // soğuma: görüşten çıkınca kademeli; arama yarıçapı dışında daha hızlı
+    const since = Game.t - this.lastSeen, R = this.searchRadius();
+    const outside = !this.lastPos || dist2(p.x, p.z, this.lastPos.x, this.lastPos.z) > R * R;
+    const hideK = (S.mask ? 1.35 : 1) * (S.outfit === 'ninja' && S.mask ? 1.15 : 1);
+    if (!this.seen && since > (outside ? 3 : 7)) S.heat = Math.max(0, S.heat - dt * (outside ? 7 : 2.2) * hideK);
+    const before = S.wanted; S.wanted = this.starsOf(S.heat);
+    if (S.wanted < before) UI.toast(S.wanted ? 'Aranma düştü: ' + '★'.repeat(S.wanted) : '✅ Polis izini kaybetti');
+    if (S.heat <= 0) { this.clear(); return; }
+    if (S.wanted <= 0) return;
+    // polis takviyesi arama bölgesine
+    const want = Math.min(10, S.wanted * 2);
     const have = Game.actors.filter(a => a.kind === 'police' && a.alive && a.tag === 'wanted').length;
-    if (have < want && Math.random() < dt * 0.8) {
-      const ang = rand(0, Math.PI * 2), r = rand(35, 55);
-      const x = p.x + Math.cos(ang) * r, z = p.z + Math.sin(ang) * r;
-      if (World.landAt(x, z) && !World.isMountain(x, z)) Enemies.spawn('police', x, z, undefined, { tag: 'wanted' });
+    if (have < want && Math.random() < dt * 0.7) {
+      const c = this.lastPos || p, ang = rand(0, Math.PI * 2), r = rand(30, 50);
+      const x = c.x + Math.cos(ang) * r, z = c.z + Math.sin(ang) * r;
+      if (World.landAt(x, z) && !World.isMountain(x, z) && dist2(x, z, p.x, p.z) > 25 * 25) { const cop = Enemies.spawn('police', x, z, undefined, { tag: 'wanted' }); cop.ai.search = true; }
     }
     if (S.wanted >= 2) Vehicles.policeChase(dt);
     if (Math.random() < dt * 2) Sound.siren();
-    // Ada: yasaklı bölge
   }
 };
 
@@ -3265,7 +3598,7 @@ const Dragon = {
     Player.energy -= dt * 3.2; if (Player.energy <= 0) { Player.energy = 0; this.dismount(); UI.toast('Enerji bitti — ejderha dağıldı'); return; }
     const mx = ctl ? Input.move.x : 0, my = ctl ? Input.move.y : 0;
     d.yaw = angLerp(d.yaw, Cam.yaw + Math.PI, dt * 2.5) - mx * dt * 1.6;
-    const up = (ctl && Input.isDown('jump') ? 1 : 0) - (ctl && (Input.isDown('sprint') || Input.isDown('descend')) ? 1 : 0);
+    const up = (ctl && Input.isDown('jump') ? 1 : 0) - (ctl && (Input.isDown('sprint') || Input.isDown('descend') || Input.isDown('dash')) ? 1 : 0);
     d.pitch = lerp(d.pitch, up * 0.7, dt * 3);
     const sp = d.speed * (0.45 + Math.max(0, my) * 0.9) + (my < 0 ? -6 : 0);
     const f = _v1.set(Math.sin(d.yaw) * Math.cos(d.pitch), Math.sin(d.pitch), Math.cos(d.yaw) * Math.cos(d.pitch));
@@ -3306,10 +3639,11 @@ class Vehicle {
     this.mesh = this.build(); Game.scene.add(this.mesh); Game.vehicles.push(this);
   }
   build() {
-    const g = new THREE.Group(), d = this.def, body = Mat.plastic(this.color, { rough: 0.22 }), dark = Mat.plastic('#141418'), glass = Mat.plastic('#1a2a4a', { rough: 0.05, metal: 0.4 });
-    const tpl = AssetManager.instance('veh_' + this.type);
-    const B = (m, w, h, l, x, y, z) => { const b = new THREE.Mesh(Geo.box, m); b.scale.set(w, h, l); b.position.set(x, y, z); b.castShadow = true; g.add(b); return b; };
     this.bodyMeshes = [];
+    const g = new THREE.Group(), d = this.def, body = Mat.plastic(this.color, { rough: 0.22 }), dark = Mat.plastic('#141418'), glass = Mat.plastic('#1a2a4a', { rough: 0.05, metal: 0.4 });
+    const tpl = AssetManager.instance('veh_' + this.type) || (this.type === 'sport' && Settings.modelMode === 'library' ? AssetManager.instance('lib_car') : null);
+    if (tpl) tpl.traverse(n => { if (n.isMesh && /body|paint|car_?body/i.test(n.name)) { n.material = new THREE.MeshPhysicalMaterial({ color: this.color, metalness: 0.6, roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.05 }); this.bodyMeshes.push(n); } });
+    const B = (m, w, h, l, x, y, z) => { const b = new THREE.Mesh(Geo.rbox, m); b.scale.set(w, h, l); b.position.set(x, y, z); b.castShadow = true; b.receiveShadow = true; g.add(b); return b; };
     if (tpl) { g.add(tpl); }
     else if (d.kind === 'bike') {
       this.bodyMeshes.push(B(body, 0.5, 0.45, 1.6, 0, 0.75, 0), B(body, 0.4, 0.3, 0.6, 0, 1.05, 0.55), B(dark, 0.5, 0.25, 0.8, 0, 1.0, -0.3));
@@ -3332,7 +3666,7 @@ class Vehicle {
     g.position.copy(this.pos); g.rotation.y = this.yaw;
     return g;
   }
-  repaint(c) { this.color = c; const m = Mat.plastic(c, { rough: 0.22 }); for (const b of this.bodyMeshes) b.material = m; }
+  repaint(c) { this.color = c; const m = Mat.plastic(c, { rough: 0.22 }); for (const b of this.bodyMeshes) { if (b.material.clearcoat === 1) b.material.color.set(c); else b.material = m; } }
   maxSpeed() { return this.def.max * (1 + 0.12 * this.mods.speed); }
   grip() { return this.def.grip * (1 + 0.15 * this.mods.grip) * (1 - Sky.wet * 0.25); }
   remove() { Game.scene.remove(this.mesh); const i = Game.vehicles.indexOf(this); if (i >= 0) Game.vehicles.splice(i, 1); this.removed = true; }
@@ -3388,7 +3722,7 @@ class Vehicle {
       const lf = dx * fwd.x + dz * fwd.z, lr = dx * fwd.z - dz * fwd.x;
       if (Math.abs(lf) < d.len / 2 + 0.4 && Math.abs(lr) < d.wid / 2 + 0.4) {
         if (this.driver && SIDE[this.driver.team] === 'hero' && SIDE[a.team] === 'hero') continue;
-        a.damage(Math.abs(this.speed) * 1.6, this.driver || null, { knock: Math.abs(this.speed) * 0.8, lift: 5 });
+        a.damage(Math.abs(this.speed) * 1.6, this.driver || null, { knock: Math.abs(this.speed) * 0.8, lift: 5, vehicle: true, speed: Math.abs(this.speed) });
         if (this.driver?.kind === 'player') Combat.danger(a.pos, 25);
         this.speed *= 0.85;
       }
@@ -3414,9 +3748,9 @@ const Vehicles = {
     if (v.driver && v.driver !== a) {
       // araç gaspı
       const dr = v.driver; this.exit(dr, false);
-      if (dr.kind === 'enemy' || dr.kind === 'police') dr.damage(5, a);
+      if (dr.kind === 'enemy' || dr.kind === 'police') dr.damage(5, a, { noCrime: dr.kind === 'enemy' });
     }
-    if (v.npcDriver) { v.npcDriver = false; const c = new Actor({ kind: 'civ', team: 'civ', cast: 'Civ', look: civilianLook(randi(1, 99999)), pos: _v1.set(v.pos.x + Math.cos(v.yaw) * 2, v.pos.y, v.pos.z - Math.sin(v.yaw) * 2), hp: 30 }); c.ai = { mode: 'walk', from: 0, to: 0, side: 1, t: 0, sp: 1.5 }; Population.civs.push(c); Population.panic(c, v.pos); if (!S.isRecognizedNinja) Crime.commit(1, 'araç gaspı'); (v.driverMeshes || []).forEach(m => m.visible = false); v.ai = null; const ti = this.traffic.indexOf(v); if (ti >= 0) this.traffic.splice(ti, 1); }
+    if (v.npcDriver) { v.npcDriver = false; const c = new Actor({ kind: 'civ', team: 'civ', cast: 'Civ', look: civilianLook(randi(1, 99999)), pos: _v1.set(v.pos.x + Math.cos(v.yaw) * 2, v.pos.y, v.pos.z - Math.sin(v.yaw) * 2), hp: 30 }); c.ai = { mode: 'walk', from: 0, to: 0, side: 1, t: 0, sp: 1.5 }; Population.civs.push(c); Population.panic(c, v.pos); if (!S.isRecognizedNinja) Crime.commit(CRIME_W.carjack, 'araç gaspı'); (v.driverMeshes || []).forEach(m => m.visible = false); v.ai = null; const ti = this.traffic.indexOf(v); if (ti >= 0) this.traffic.splice(ti, 1); }
     if (v.ai && v.ai.mode !== 'player') { v.ai = null; const ti = this.traffic.indexOf(v); if (ti >= 0) this.traffic.splice(ti, 1); }
     a.vehicle = v; v.driver = a; a.want.set(0, 0, 0); a.vel.set(0, 0, 0);
     a.hidden = v.def.kind !== 'bike'; a.st.anim = v.def.kind === 'bike' ? 'ride' : 'drive';
@@ -3480,6 +3814,14 @@ const Vehicles = {
       tx = B.x - Math.cos(yaw) * 3.5; tz = B.z + Math.sin(yaw) * 3.5;
       if (dist2(tx, tz, v.pos.x, v.pos.z) < 7 * 7) { const nn = B.n.filter(i => i !== ai.from); ai.from = ai.to; ai.to = nn.length ? pick(nn) : ai.from; }
       desired = 13;
+      // kavşak ışıkları: x-ekseni / z-ekseni yolları sırayla yeşil (8 sn)
+      if (B.n.length > 2) {
+        const alongX = Math.abs(B.x - A.x) > Math.abs(B.z - A.z);
+        const phase = Math.floor((Game.t + (B.x * 0.013 + B.z * 0.007)) / 8) % 2;
+        const green = alongX ? phase === 0 : phase === 1;
+        const dB = Math.sqrt(dist2(B.x, B.z, v.pos.x, v.pos.z));
+        if (!green && dB > 9.5 && dB < 20) desired = dB < 12 ? 0 : 4;
+      }
     } else if (ai.mode === 'path' || ai.mode === 'race') {
       const wp = ai.path[ai.idx]; if (!wp) { v.physics(dt, 0, 1, 0, false); return; }
       tx = wp[0]; tz = wp[1]; desired = v.maxSpeed() * (ai.speedK || 0.8);
@@ -3608,7 +3950,7 @@ UI = {
     $('statline').innerHTML = `💰 ${S.money} ₺ · ⭐ ${Math.floor(S.reputation)}${S.isRecognizedNinja ? ' · 🥷 <b style="color:#b6ff3b">Tanınmış Ninja</b>' : ''}<br>📍 ${d.name} · ${S.outfit === 'ninja' ? '🥷 Ninja' : '👕 Sivil'}${S.mask ? ' · 😷' : ''}${S.allyUnlocked ? ` · 💞 ${Math.floor(S.bondLevel)}` : ''}`;
     const w = Math.ceil(S.wanted);
     $('wanted').innerHTML = [1, 2, 3, 4, 5].map(i => `<span class="${i <= w ? 'on' : ''}">★</span>`).join('');
-    $('wanted').classList.toggle('flash', w > 0 && Game.t - Crime.lastSeen < 3);
+    $('wanted').classList.toggle('flash', w > 0 && Crime.seen);
     $('clock').textContent = `${Sky.weatherIcon()} ${Sky.label()} · Gün ${S.day}`;
     const wp = Player.weapon(); $('weaponhud').textContent = `${wp.icon} ${wp.name}  (${S.carried.length - 1}/${MAX_CARRY})`;
     $('fps').textContent = Settings.showFps ? Math.round(Main.fps) + ' FPS · ' + Game.renderer.info.render.calls + ' çizim' : '';
@@ -3633,6 +3975,7 @@ UI = {
     for (const s of S.safehouses) dot(LOC[s][0], LOC[s][1], '#b6ff3b', 5);
     for (const a of Game.actors) if (a.alive && !a.hidden && (a.kind === 'enemy' || (a.kind === 'police' && S.wanted > 0 && !S.isRecognizedNinja))) dot(a.pos.x, a.pos.z, a.kind === 'police' ? '#3bb0ff' : '#ff3b3b', 3);
     if (Game.ally && S.allyWith && !Game.ally.hidden) dot(Game.ally.pos.x, Game.ally.pos.z, '#7fffe0', 4);
+    if (S.wanted > 0 && Crime.lastPos && !S.isRecognizedNinja) { g.strokeStyle = Crime.seen ? 'rgba(255,59,59,.8)' : 'rgba(59,176,255,.7)'; g.lineWidth = 3 / sc; g.beginPath(); g.arc(Crime.lastPos.x, Crime.lastPos.z, Crime.searchRadius(), 0, Math.PI * 2); g.stroke(); }
     const tgt = Missions.target; if (tgt) dot(tgt[0], tgt[1], '#ffd23b', 7);
     if (S.waypoint) dot(S.waypoint[0], S.waypoint[1], '#ff2fd6', 6);
     g.restore();
@@ -3786,7 +4129,7 @@ UI = {
       ${S.storage.map((w, i) => `<div class="card"><b>${WEAPONS[w].icon} ${WEAPONS[w].name}</b>Depoda<div class="row">${this.btn('Al ⬆', () => { this.takeFromStorage(i); this.safehouseMenu(id); }, 'alt')}</div></div>`).join('')}</div>`);
   },
   async sleep() {
-    this.closePanel(); await this.fade(1); S.time = (S.time + 8) % 24; if (S.time < 8) S.day++; Game.player.hp = Game.player.maxHp; Player.energy = 100; S.wanted = 0; Crime.clear(); saveGame(); await this.fade(0); this.toast('😴 Dinlendin. Saat ' + Sky.label());
+    this.closePanel(); await this.fade(1); S.time = (S.time + 8) % 24; if (S.time < 8) S.day++; Game.player.hp = Game.player.maxHp; Player.energy = 100; Crime.clear(); saveGame(); await this.fade(0); this.toast('😴 Dinlendin. Saat ' + Sky.label());
   },
   modShop() {
     const p = Game.player.pos;
@@ -3821,8 +4164,8 @@ UI = {
   },
   // ---------------------------------------------------------- Duraklat / ayarlar
   pause() {
-    this.showPanel('pause', `<h2>⏸ Duraklatıldı</h2><div class="row" style="flex-direction:column;align-items:stretch">${this.btn('▶ Devam', () => this.closePanel())}${this.btn('💾 Kaydet', () => { saveGame(); this.toast('Kaydedildi'); })}${this.btn('📱 Telefon', () => this.phone())}${this.btn('⚙ Ayarlar', () => this.settings())}${this.btn('🛠 Admin Paneli', () => this.admin())}${this.btn('🏠 Ana Menü', () => { saveGame(); location.reload(); }, 'warn')}</div>
-      <p style="font-size:12px;color:var(--dim)">${Input.device === 'kbm' ? 'Klavye/Fare' : Input.device === 'pad' ? 'Gamepad' : 'Dokunmatik'} algılandı.</p>`);
+    this.showPanel('pause', `<h2>⏸ Duraklatıldı</h2><div class="row" style="flex-direction:column;align-items:stretch">${this.btn('▶ Devam', () => this.closePanel())}${this.btn('💾 Kaydet', () => { saveGame(); this.toast('Kaydedildi'); })}${this.btn('📱 Telefon', () => this.phone())}${this.btn('⚙ Ayarlar', () => this.settings())}${this.btn('🛠 Admin Paneli', () => this.admin())}${this.btn('🔄 Güncellemeleri denetle', () => AutoUpdater.check(true))}${this.btn('🏠 Ana Menü', () => { saveGame(); location.reload(); }, 'warn')}</div>
+      <p style="font-size:12px;color:var(--dim)">Sürüm ${NG_VERSION}${localStorage.getItem(PKG_VER_KEY) ? ' (güncelleme paketi)' : ''} · ${Input.device === 'kbm' ? 'Klavye/Fare' : Input.device === 'pad' ? 'Gamepad' : 'Dokunmatik'} algılandı.</p>`);
     Game.paused = true; const el = $('pause'); const obs = new MutationObserver(() => { if (el.classList.contains('hidden')) { Game.paused = false; obs.disconnect(); } }); obs.observe(el, { attributes: true });
   },
   settings() {
@@ -3833,9 +4176,13 @@ UI = {
       <div class="row"><label><input type="checkbox" id="st_sh" ${s.shadows ? 'checked' : ''}> Gölgeler</label> <label><input type="checkbox" id="st_inv" ${s.invertY ? 'checked' : ''}> Y eksenini ters çevir</label> <label><input type="checkbox" id="st_fps" ${s.showFps ? 'checked' : ''}> FPS</label> <label><input type="checkbox" id="st_tf" ${s.touchForce ? 'checked' : ''}> Dokunmatik kontrolleri zorla</label></div>
       <div class="row">Hassasiyet <input type="range" id="st_se" min="0.3" max="2.5" step="0.1" value="${s.sens}"></div>
       <div class="row">Zaman hızı (oyun sn / gerçek sn) <input type="range" id="st_ts" min="10" max="240" step="10" value="${s.timeScale}"> <span id="st_tsv">${s.timeScale}</span></div>
+      <div class="row">Karakter/araç modelleri <select id="st_mm"><option value="library">Hazır 3D modeller (internet + önbellek)</option><option value="block">Blok figürler (çevrimdışı)</option></select> <small>(yeniden başlatır)</small></div>
+      <div class="row"><label><input type="checkbox" id="st_bl" ${s.bloom ? 'checked' : ''}> Neon parlaması (bloom)</label></div>
+      <div class="row">Güncelleme adresi <input id="st_up" placeholder="boş = varsayılan (GitHub)" value="${s.updateUrl || ''}" style="flex:1"></div>
+      <div class="row">${this.btn('🔄 Güncellemeleri denetle', () => AutoUpdater.check(true), 'alt')}${this.btn('↩ Yerleşik sürüme dön', () => AutoUpdater.rollback(), 'warn')}<small>Sürüm ${NG_VERSION}</small></div>
       <div class="row">Ses <input type="range" id="st_vo" min="0" max="1" step="0.05" value="${s.volume}"></div>
-      <div class="row">${this.btn('Kaydet', () => { const q = $('st_q').value, reload = q !== s.quality || $('st_sh').checked !== s.shadows; s.quality = q; s.viewDist = +$('st_vd').value; s.shadows = $('st_sh').checked; s.invertY = $('st_inv').checked; s.showFps = $('st_fps').checked; s.touchForce = $('st_tf').checked; s.sens = +$('st_se').value; s.timeScale = +$('st_ts').value; s.volume = +$('st_vo').value; saveSettings(); if (reload) { saveGame(); location.reload(); } else { Game.camera.far = s.viewDist + 200; Game.camera.updateProjectionMatrix(); Render.sky.scale.setScalar(s.viewDist + 100); this.closePanel(); } })}</div>`);
-    $('st_q').value = s.quality; $('st_vd').oninput = (e) => $('st_vdv').textContent = e.target.value; $('st_ts').oninput = (e) => $('st_tsv').textContent = e.target.value;
+      <div class="row">${this.btn('Kaydet', () => { const q = $('st_q').value, reload = q !== s.quality || $('st_sh').checked !== s.shadows || $('st_mm').value !== s.modelMode || $('st_bl').checked !== s.bloom; s.modelMode = $('st_mm').value; s.bloom = $('st_bl').checked; s.updateUrl = $('st_up').value.trim(); s.quality = q; s.viewDist = +$('st_vd').value; s.shadows = $('st_sh').checked; s.invertY = $('st_inv').checked; s.showFps = $('st_fps').checked; s.touchForce = $('st_tf').checked; s.sens = +$('st_se').value; s.timeScale = +$('st_ts').value; s.volume = +$('st_vo').value; saveSettings(); if (reload) { saveGame(); location.reload(); } else { Game.camera.far = s.viewDist + 200; Game.camera.updateProjectionMatrix(); Render.sky.scale.setScalar(s.viewDist + 100); this.closePanel(); } })}</div>`);
+    $('st_q').value = s.quality; $('st_mm').value = s.modelMode || 'library'; $('st_vd').oninput = (e) => $('st_vdv').textContent = e.target.value; $('st_ts').oninput = (e) => $('st_tsv').textContent = e.target.value;
   },
   // ---------------------------------------------------------- ADMIN PANELİ
   async admin() {
@@ -4098,6 +4445,7 @@ const Missions = {
       const ang = rand(0, Math.PI * 2), r = rand(4, 10);
       let x = cx + Math.cos(ang) * r, z = cz + Math.sin(ang) * r;
       const yy = (w.y ?? y);
+      if (yy === undefined) [x, z] = World.freeSpot(x, z, World.surfaceAt(x, z));
       list.push(Enemies.spawn(w.type, x, z, yy !== undefined ? World.groundAt(x, z, yy + 1) : undefined, { tag: this.tag() }));
     }
     return list;
@@ -4200,7 +4548,7 @@ const Missions = {
       await this.waitUntil(() => !thief.alive, tok, { tick: () => UI.objective('Hırsızı etkisiz bırak') });
     },
     async collect(st, tok) {
-      const items = st.items.map(i => locXZ(i)); let got = 0;
+      const items = st.items.map(i => { const [x, z] = locXZ(i); return World.freeSpot(x, z, World.surfaceAt(x, z)); }); let got = 0;
       for (const [x, z] of items) { const y = World.surfaceAt(x, z); Pickups.spawn(x, y, z, { color: '#20f0ff', size: 0.7, r: 2.2, tag: this.tag(), onPick: () => { got++; UI.toast(`${st.label || 'Eşya'} ${got}/${items.length}`); } }); }
       if (st.guards) for (const [x, z] of items) if (Math.random() < 0.6) Enemies.spawn(st.guards, x + rand(-5, 5), z + rand(-5, 5), undefined, { tag: this.tag(), aggro: false });
       await this.waitUntil(() => {
@@ -4377,7 +4725,7 @@ const Missions = {
     giveWeapon(k) { if (S.carried.includes(k)) return; if (S.carried.length - 1 < MAX_CARRY) S.carried.push(k); else S.storage.push(k); S.equipped = S.carried.indexOf(k); UI.toast(WEAPONS[k].icon + ' ' + WEAPONS[k].name + ' alındı · Silah tekerleği: ' + Input.hint('wheel')); },
     spawnVehicle(o) { const [x, z] = locXZ(o.at); const v = Vehicles.spawn(o.type, x + (o.dx || 0), z + (o.dz || 0), Math.PI, { temp: !!o.temp, tag: this.tag() }); this.ctxVehicles.push(v); return v; },
     ownVehicle(type) { const v = Game.player.vehicle || this.ctxVehicles.find(x => x.type === type); if (!v) return; v.temp = false; Vehicles.own(v); UI.toast('🔑 ' + v.def.name + ' artık senin! (Garaj)'); },
-    policeRaid(n) { if (S.isRecognizedNinja) return; S.wanted = Math.max(S.wanted, n); Crime.lastSeen = Game.t; UI.toast('🚨 Polis baskını! Kapsülleri al ve kaç!', true); },
+    policeRaid(n) { if (S.isRecognizedNinja) return; Crime.setStars(n); UI.toast('🚨 Polis baskını! Kapsülleri al ve kaç!', true); },
     clearWanted() { if (S.wanted > 0) { UI.toast('Liman işçileri seni sakladı — polis uzaklaştı.'); Crime.clear(); } },
     unlockSafehouse(id) { if (!S.safehouses.includes(id)) S.safehouses.push(id); UI.toast('🏠 Yeni güvenli ev: ' + districtAt(...LOC[id]).name, true); },
     repLevel(n) { S.reputation = Math.max(S.reputation, n); },
@@ -4521,6 +4869,128 @@ const Eggs = {
   }
 };
 // ============================================================================
+//  AutoUpdater — oyun içi güncelleme (tam kurulum dosyası indirmeden)
+//  version.json → { version, mandatory, notes, baseUrl, files:[{path,url?,sha256?,size?}],
+//                   shell:{ minShell, exeUrl, apkUrl } }
+//  Paket dosyaları SHA-256 ile doğrulanıp servis çalışanı önbelleğine ('ng-pkg') yazılır;
+//  sonraki açılışta yeni dosyalar yerleşik olanların yerine sunulur. Kabuk (Electron/APK)
+//  sürümü gerekiyorsa electron-updater / APK indirme kancası devreye girer.
+// ============================================================================
+const PKG_VER_KEY = 'ng_pkg_ver';
+const DEFAULT_UPDATE_URLS = [
+  'https://raw.githubusercontent.com/hllakbnr/neon-golgeler/main/game/version.json',
+  'https://cdn.jsdelivr.net/gh/hllakbnr/neon-golgeler@main/game/version.json'
+];
+const SHELL = (() => {
+  const q = new URLSearchParams(location.search).get('shell');
+  if (window.ngShell) return { kind: 'electron', version: window.ngShell.version };
+  if (q && q.startsWith('apk-')) return { kind: 'apk', version: q.slice(4) };
+  return { kind: 'web', version: NG_VERSION };
+})();
+const cmpVer = (a, b) => { const x = String(a || '0').split('.').map(Number), y = String(b || '0').split('.').map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d > 0 ? 1 : -1; } return 0; };
+
+const AutoUpdater = {
+  swOk: false, busy: false, latest: null,
+  get current() { return NG_VERSION; },
+  async init() {
+    if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
+    try {
+      await navigator.serviceWorker.register('./sw.js', { scope: './' });
+      await navigator.serviceWorker.ready; this.swOk = true;
+      // yerleşik paket önbellektekinden yeniyse (yeni .exe/.apk kuruldu) eski önbelleği temizle
+      const pkg = localStorage.getItem(PKG_VER_KEY);
+      if (pkg) {
+        const r = await fetch('./version.json?ngbypass=1', { cache: 'no-store' }).catch(() => null);
+        const built = r && r.ok ? (await r.json()).version : null;
+        if (built && cmpVer(built, pkg) >= 0) { await caches.delete('ng-pkg'); localStorage.removeItem(PKG_VER_KEY); if (cmpVer(NG_VERSION, built) < 0) location.reload(); }
+      }
+    } catch (e) { console.warn('Servis çalışanı kaydedilemedi:', e.message); }
+  },
+  urls() {
+    const u = [];
+    if (Settings.updateUrl) u.push(Settings.updateUrl);
+    if (Supa.ok()) u.push(Supa.publicUrl('version.json'));
+    return u.concat(DEFAULT_UPDATE_URLS);
+  },
+  async fetchManifest() {
+    for (const u of this.urls()) {
+      try {
+        const ac = new AbortController(); const to = setTimeout(() => ac.abort(), 10000);
+        const r = await fetch(u + (u.includes('?') ? '&' : '?') + 't=' + Date.now(), { cache: 'no-store', signal: ac.signal }); clearTimeout(to);
+        if (!r.ok) continue;
+        const m = await r.json(); if (m && m.version) { m._src = u; return m; }
+      } catch (e) { /* sıradaki kaynak */ }
+    }
+    return null;
+  },
+  async check(manual) {
+    if (this.busy) return;
+    const m = await this.fetchManifest();
+    if (!m) { if (manual) UI.toast('Güncelleme sunucusuna ulaşılamadı (internet bağlantını kontrol et)'); return; }
+    this.latest = m;
+    if (cmpVer(m.version, this.current) <= 0) {
+      if (m.shell && cmpVer(m.shell.minShell, SHELL.version) > 0 && SHELL.kind !== 'web') return this.shellPrompt(m);
+      if (manual) UI.toast('✓ Oyun güncel (sürüm ' + this.current + ')');
+      return;
+    }
+    this.prompt(m);
+  },
+  prompt(m) {
+    const needShell = m.shell && SHELL.kind !== 'web' && cmpVer(m.shell.minShell, SHELL.version) > 0;
+    const el = $('updater');
+    el.innerHTML = `<h2>⬇ Yeni sürüm: ${m.version}</h2><p style="color:var(--dim);font-size:13px">Yüklü sürüm: ${this.current}${m.mandatory ? ' · <b style="color:#ff7a9a">Zorunlu güncelleme</b>' : ''}</p>
+      <div class="card" style="white-space:pre-wrap;max-height:30vh;overflow:auto">${(m.notes || 'İyileştirmeler ve hata düzeltmeleri.').replace(/</g, '&lt;')}</div>
+      ${needShell ? `<p style="color:#ffb020;font-size:13px">Bu sürüm yeni bir ${SHELL.kind === 'apk' ? 'uygulama (APK)' : 'masaüstü kabuğu'} gerektiriyor.</p>` : ''}
+      <div class="barw" style="margin:12px 0 4px"><div id="updbar" style="width:0%;background:linear-gradient(90deg,var(--neon),var(--cyan));height:100%"></div></div><div id="updtxt" style="font-size:12px;color:var(--dim)"></div>
+      <div class="row" style="margin-top:10px">${UI.btn(needShell ? '⬇ Uygulamayı güncelle' : '⬇ Şimdi güncelle ve yeniden başlat', () => needShell ? this.shellUpdate(m) : this.apply(m), 'alt')}${m.mandatory ? '' : UI.btn('Sonra', () => { el.classList.add('hidden'); Game.inputLock = Math.max(0, Game.inputLock - 1); })}</div>`;
+    el.classList.remove('hidden'); Game.inputLock++;
+    if (document.pointerLockElement) document.exitPointerLock();
+  },
+  shellPrompt(m) { this.prompt(Object.assign({}, m, { notes: (m.notes || '') + '\n\nUygulama kabuğu güncellemesi mevcut.' })); },
+  async sha256(buf) { const h = await crypto.subtle.digest('SHA-256', buf); return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join(''); },
+  async apply(m) {
+    if (this.busy) return; this.busy = true;
+    const bar = $('updbar'), txt = $('updtxt');
+    try {
+      if (!this.swOk) throw new Error('Bu ortamda oyun içi güncelleme desteklenmiyor; yeni sürümü Releases sayfasından indir.');
+      const base = m.baseUrl || m._src.replace(/version\.json.*$/, '');
+      const files = m.files || [{ path: 'index.html' }];
+      const total = files.reduce((a, f) => a + (f.size || 1), 0); let done = 0;
+      await caches.delete('ng-pkg-staging');
+      const stage = await caches.open('ng-pkg-staging');
+      for (const f of files) {
+        txt.textContent = 'İndiriliyor: ' + f.path;
+        const url = f.url || (base + f.path);
+        const r = await fetch(url + (url.includes('?') ? '&' : '?') + 'v=' + encodeURIComponent(m.version), { cache: 'no-store' });
+        if (!r.ok) throw new Error(f.path + ' indirilemedi (' + r.status + ')');
+        const buf = await r.arrayBuffer();
+        if (f.sha256) { const h = await this.sha256(buf); if (h !== f.sha256) throw new Error(f.path + ' bütünlük doğrulaması başarısız'); }
+        const type = /\.html$/.test(f.path) ? 'text/html; charset=utf-8' : /\.m?js$/.test(f.path) ? 'text/javascript; charset=utf-8' : /\.json$/.test(f.path) ? 'application/json' : /\.wasm$/.test(f.path) ? 'application/wasm' : 'application/octet-stream';
+        const path = new URL(f.path, location.href).pathname;
+        await stage.put(path, new Response(buf, { headers: { 'Content-Type': type } }));
+        done += f.size || 1; bar.style.width = Math.round(done / total * 100) + '%';
+      }
+      // önbellekleri değiştir (atomik)
+      txt.textContent = 'Uygulanıyor…';
+      await caches.delete('ng-pkg'); const live = await caches.open('ng-pkg');
+      for (const req of await stage.keys()) await live.put(req, await stage.match(req));
+      await caches.delete('ng-pkg-staging');
+      localStorage.setItem(PKG_VER_KEY, m.version);
+      saveGame && Game.player && saveGame();
+      txt.textContent = 'Yeniden başlatılıyor…'; await wait(600);
+      this.restart();
+    } catch (e) { txt.textContent = '✗ ' + e.message; UI.toast('Güncelleme başarısız: ' + e.message); }
+    this.busy = false;
+  },
+  restart() { if (window.ngShell && window.ngShell.relaunch) window.ngShell.relaunch(); else location.reload(); },
+  async rollback() { if (this.swOk) await caches.delete('ng-pkg'); localStorage.removeItem(PKG_VER_KEY); UI.toast('Yerleşik sürüme dönülüyor…'); setTimeout(() => this.restart(), 600); },
+  shellUpdate(m) {
+    if (SHELL.kind === 'electron' && window.ngShell.checkShellUpdate) { window.ngShell.checkShellUpdate(); UI.toast('Masaüstü güncellemesi indiriliyor; bitince oyun yeniden başlayacak.'); return; }
+    const url = SHELL.kind === 'apk' ? m.shell?.apkUrl : m.shell?.exeUrl;
+    if (url) location.href = url; else UI.toast('İndirme bağlantısı bulunamadı');
+  }
+};
+// ============================================================================
 //  ANA DÖNGÜ — yükleme, başlık menüsü, yeni oyun/devam, sistem güncelleme sırası
 // ============================================================================
 const Main = {
@@ -4536,8 +5006,10 @@ const Main = {
       if (Supa.ok()) { prog(0.1, 'Supabase sürüm kontrolü…'); await AssetManager.syncRemote(); }
       prog(0.12, 'Varlıklar önbellekten yükleniyor…');
       await AssetManager.loadAll((k) => prog(0.12 + k * 0.18));
-      prog(0.32, 'Şehir inşa ediliyor…'); await wait(16);
-      World.build((k) => prog(0.32 + k * 0.6, 'Şehir inşa ediliyor… ' + Math.round(k * 100) + '%'));
+      prog(0.3, 'Hazır 3D modeller (önbellek / internet)…');
+      await AssetManager.loadLibrary((k) => prog(0.3 + k * 0.1, 'Hazır 3D modeller… ' + Math.round(k * 100) + '%'));
+      prog(0.4, 'Şehir inşa ediliyor…'); await wait(16);
+      World.build((k) => prog(0.4 + k * 0.52, 'Şehir inşa ediliyor… ' + Math.round(k * 100) + '%'));
       prog(0.96, 'Gölgeler ısınıyor…');
       Game.camera.position.set(-300, 60, 560); Game.camera.lookAt(-320, 0, 480);
       Sky.update(0.016); Game.renderer.render(Game.scene, Game.camera);
@@ -4545,6 +5017,7 @@ const Main = {
     } catch (e) { console.error(e); txt.textContent = 'Başlatma hatası: ' + e.message; return; }
     $('loading').classList.add('hidden');
     this.title();
+    AutoUpdater.init().then(() => setTimeout(() => AutoUpdater.check(false), 1500));
     this.last = performance.now(); requestAnimationFrame((t) => this.loop(t));
     document.addEventListener('visibilitychange', () => { if (document.hidden && Game.mode === 'play' && !Game.paused) { saveGame(); UI.pause(); } });
     addEventListener('beforeunload', () => { if (Game.player) saveGame(); });
@@ -4588,7 +5061,7 @@ const Main = {
     Game.dt = dt;
     Input.poll();
     UI.update(dt);
-    if (Game.mode === 'title' || !Game.player) { Game.t += dt; SHARED_UNI.uTime.value = Game.t; Sky.update(dt * 0.2); this.titleCam(dt); Game.renderer.render(Game.scene, Game.camera); return; }
+    if (Game.mode === 'title' || !Game.player) { Game.t += dt; SHARED_UNI.uTime.value = Game.t; Sky.update(dt * 0.2); this.titleCam(dt); Render.draw(); return; }
     if (!Game.paused) {
       Game.t += dt; SHARED_UNI.uTime.value = Game.t;
       Sky.update(dt);
@@ -4611,7 +5084,7 @@ const Main = {
     }
     World.updateCulling();
     Cam.update(dt);
-    Game.renderer.render(Game.scene, Game.camera);
+    Render.draw();
   },
   titleCam(dt) {
     const a = Game.t * 0.05, c = Game.camera;
@@ -4621,7 +5094,7 @@ const Main = {
   }
 };
 // Hata ayıklama kancası (konsoldan: __NG.S, __NG.Missions …)
-window.__NG = { get S() { return S; }, Bus, Game, Missions, Player, Ally, World, Vehicles, Enemies, Crime, Cutscene, UI, Input, Sky, Friends, Pickups, Eggs, Population, Main, AssetManager, AssetCache, Supa, Dragon, Combat, Cam, MISSIONS, SIDES, ACTIVITIES, EGGS, LOC, CAST, saveGame };
+window.__NG = { get S() { return S; }, Bus, Game, Missions, Player, Ally, World, Vehicles, Enemies, Crime, Cutscene, UI, Input, Sky, Friends, Pickups, Eggs, Population, Main, AssetManager, AssetCache, Supa, Dragon, Combat, Cam, AutoUpdater, MISSIONS, SIDES, ACTIVITIES, EGGS, LOC, CAST, saveGame };
 Main.init();
 
 </script>

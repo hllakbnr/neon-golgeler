@@ -4,6 +4,10 @@
 package com.neongolgeler.game
 
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import org.mozilla.geckoview.AllowOrDeny
+import org.mozilla.geckoview.GeckoResult
 import android.content.res.AssetManager
 import android.os.Bundle
 import android.view.View
@@ -24,7 +28,7 @@ class MainActivity : Activity() {
     private lateinit var session: GeckoSession
     private var server: LocalAssetServer? = null
 
-    companion object { private var runtime: GeckoRuntime? = null; const val PORT = 48219 }
+    companion object { private var runtime: GeckoRuntime? = null; const val PORT = 48219; const val SHELL_VERSION = "1.1.0" }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,9 +45,16 @@ class MainActivity : Activity() {
                 .build()
             runtime = GeckoRuntime.create(this, settings)
         }
+        // dış bağlantılar (APK güncellemesi, Releases) sistem tarayıcısında açılır
+        session.navigationDelegate = object : GeckoSession.NavigationDelegate {
+            override fun onLoadRequest(session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest): GeckoResult<AllowOrDeny>? {
+                return if (request.uri.startsWith("http://127.0.0.1")) GeckoResult.fromValue(AllowOrDeny.ALLOW)
+                else { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(request.uri))); GeckoResult.fromValue(AllowOrDeny.DENY) }
+            }
+        }
         session.open(runtime!!)
         view.setSession(session)
-        session.loadUri("http://127.0.0.1:$PORT/index.html")
+        session.loadUri("http://127.0.0.1:$PORT/index.html?shell=apk-" + SHELL_VERSION)
     }
 
     override fun onDestroy() { server?.stop(); session.close(); super.onDestroy() }
@@ -56,7 +67,7 @@ class LocalAssetServer(private val assets: AssetManager, private val port: Int) 
     @Volatile private var running = false
     private var socket: ServerSocket? = null
     private val types = mapOf("html" to "text/html; charset=utf-8", "js" to "text/javascript; charset=utf-8", "json" to "application/json",
-        "png" to "image/png", "jpg" to "image/jpeg", "webp" to "image/webp", "glb" to "model/gltf-binary", "obj" to "text/plain", "css" to "text/css")
+        "png" to "image/png", "jpg" to "image/jpeg", "webp" to "image/webp", "glb" to "model/gltf-binary", "obj" to "text/plain", "css" to "text/css", "wasm" to "application/wasm")
 
     fun start() {
         running = true

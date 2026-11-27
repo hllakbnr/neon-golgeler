@@ -1,0 +1,24 @@
+{
+  "version": "1.1.0",
+  "mandatory": false,
+  "notes": "Sürüm 1.1: hazır 3D modeller (iskeletli animasyonlu karakterler, spor araba), gerçek gölgeler + neon parlaması, daha hızlı hareket + atılma, yaylı kamera, ısı tabanlı aranma sistemi, akıllı NPC/trafik ışıkları, oyun içi otomatik güncelleme.",
+  "date": "2026-11-27T11:39:41.704Z",
+  "baseUrl": "https://raw.githubusercontent.com/hllakbnr/neon-golgeler/main/game/",
+  "files": [
+    {
+      "path": "index.html",
+      "size": 386563,
+      "sha256": "14e2c25775c81d45e0585a8879939aec3474065cca4e4a93e9f47d421ed7dbdf"
+    },
+    {
+      "path": "sw.js",
+      "size": 727,
+      "sha256": "1d3e84337c4d156e116077321d38fe8cb9eb168ba64633c89a6cd90530698d9e"
+    }
+  ],
+  "shell": {
+    "minShell": "1.1.0",
+    "exeUrl": "https://github.com/hllakbnr/neon-golgeler/releases/latest",
+    "apkUrl": "https://github.com/hllakbnr/neon-golgeler/releases/latest/download/NeonGolgeler.apk"
+  }
+}

@@ -128,6 +128,7 @@ const Missions = {
       const ang = rand(0, Math.PI * 2), r = rand(4, 10);
       let x = cx + Math.cos(ang) * r, z = cz + Math.sin(ang) * r;
       const yy = (w.y ?? y);
+      if (yy === undefined) [x, z] = World.freeSpot(x, z, World.surfaceAt(x, z));
       list.push(Enemies.spawn(w.type, x, z, yy !== undefined ? World.groundAt(x, z, yy + 1) : undefined, { tag: this.tag() }));
     }
     return list;
@@ -230,7 +231,7 @@ const Missions = {
       await this.waitUntil(() => !thief.alive, tok, { tick: () => UI.objective('Hırsızı etkisiz bırak') });
     },
     async collect(st, tok) {
-      const items = st.items.map(i => locXZ(i)); let got = 0;
+      const items = st.items.map(i => { const [x, z] = locXZ(i); return World.freeSpot(x, z, World.surfaceAt(x, z)); }); let got = 0;
       for (const [x, z] of items) { const y = World.surfaceAt(x, z); Pickups.spawn(x, y, z, { color: '#20f0ff', size: 0.7, r: 2.2, tag: this.tag(), onPick: () => { got++; UI.toast(`${st.label || 'Eşya'} ${got}/${items.length}`); } }); }
       if (st.guards) for (const [x, z] of items) if (Math.random() < 0.6) Enemies.spawn(st.guards, x + rand(-5, 5), z + rand(-5, 5), undefined, { tag: this.tag(), aggro: false });
       await this.waitUntil(() => {
@@ -407,7 +408,7 @@ const Missions = {
     giveWeapon(k) { if (S.carried.includes(k)) return; if (S.carried.length - 1 < MAX_CARRY) S.carried.push(k); else S.storage.push(k); S.equipped = S.carried.indexOf(k); UI.toast(WEAPONS[k].icon + ' ' + WEAPONS[k].name + ' alındı · Silah tekerleği: ' + Input.hint('wheel')); },
     spawnVehicle(o) { const [x, z] = locXZ(o.at); const v = Vehicles.spawn(o.type, x + (o.dx || 0), z + (o.dz || 0), Math.PI, { temp: !!o.temp, tag: this.tag() }); this.ctxVehicles.push(v); return v; },
     ownVehicle(type) { const v = Game.player.vehicle || this.ctxVehicles.find(x => x.type === type); if (!v) return; v.temp = false; Vehicles.own(v); UI.toast('🔑 ' + v.def.name + ' artık senin! (Garaj)'); },
-    policeRaid(n) { if (S.isRecognizedNinja) return; S.wanted = Math.max(S.wanted, n); Crime.lastSeen = Game.t; UI.toast('🚨 Polis baskını! Kapsülleri al ve kaç!', true); },
+    policeRaid(n) { if (S.isRecognizedNinja) return; Crime.setStars(n); UI.toast('🚨 Polis baskını! Kapsülleri al ve kaç!', true); },
     clearWanted() { if (S.wanted > 0) { UI.toast('Liman işçileri seni sakladı — polis uzaklaştı.'); Crime.clear(); } },
     unlockSafehouse(id) { if (!S.safehouses.includes(id)) S.safehouses.push(id); UI.toast('🏠 Yeni güvenli ev: ' + districtAt(...LOC[id]).name, true); },
     repLevel(n) { S.reputation = Math.max(S.reputation, n); },

@@ -1,14 +1,15 @@
 {
   "name": "neon-golgeler",
   "productName": "Neon Gölgeler",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Three.js açık dünya hikayeli aksiyon-macera (blok oyuncak estetiği)",
   "main": "electron/main.js",
   "scripts": {
     "vendor": "node tools/fetch-vendor.mjs",
     "start": "electron .",
     "dist:win": "npm run vendor && electron-builder --win portable nsis",
-    "serve": "node tools/serve.mjs"
+    "serve": "node tools/serve.mjs",
+    "build": "sh tools/build.sh && node tools/make-version.mjs"
   },
   "devDependencies": {
     "electron": "^31.0.0",
@@ -17,9 +18,40 @@
   "build": {
     "appId": "com.neongolgeler.game",
     "productName": "Neon Gölgeler",
-    "files": ["electron/**"],
-    "extraResources": [{ "from": "game", "to": "game" }],
-    "win": { "target": ["portable", "nsis"] },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
-  }
+    "files": [
+      "electron/**"
+    ],
+    "extraResources": [
+      {
+        "from": "game",
+        "to": "game"
+      }
+    ],
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "NeonGolgeler-Kurulum-${version}.exe"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "hllakbnr",
+        "repo": "neon-golgeler"
+      }
+    ],
+    "artifactName": "NeonGolgeler-${version}-${os}.${ext}",
+    "portable": {
+      "artifactName": "NeonGolgeler-Tasinabilir-${version}.exe"
+    }
+  },
+  "dependencies": {
+    "electron-updater": "^6.1.8"
+  },
+  "author": "hllakbnr"
 }

@@ -50,7 +50,7 @@ UI = {
     $('statline').innerHTML = `💰 ${S.money} ₺ · ⭐ ${Math.floor(S.reputation)}${S.isRecognizedNinja ? ' · 🥷 <b style="color:#b6ff3b">Tanınmış Ninja</b>' : ''}<br>📍 ${d.name} · ${S.outfit === 'ninja' ? '🥷 Ninja' : '👕 Sivil'}${S.mask ? ' · 😷' : ''}${S.allyUnlocked ? ` · 💞 ${Math.floor(S.bondLevel)}` : ''}`;
     const w = Math.ceil(S.wanted);
     $('wanted').innerHTML = [1, 2, 3, 4, 5].map(i => `<span class="${i <= w ? 'on' : ''}">★</span>`).join('');
-    $('wanted').classList.toggle('flash', w > 0 && Game.t - Crime.lastSeen < 3);
+    $('wanted').classList.toggle('flash', w > 0 && Crime.seen);
     $('clock').textContent = `${Sky.weatherIcon()} ${Sky.label()} · Gün ${S.day}`;
     const wp = Player.weapon(); $('weaponhud').textContent = `${wp.icon} ${wp.name}  (${S.carried.length - 1}/${MAX_CARRY})`;
     $('fps').textContent = Settings.showFps ? Math.round(Main.fps) + ' FPS · ' + Game.renderer.info.render.calls + ' çizim' : '';
@@ -75,6 +75,7 @@ UI = {
     for (const s of S.safehouses) dot(LOC[s][0], LOC[s][1], '#b6ff3b', 5);
     for (const a of Game.actors) if (a.alive && !a.hidden && (a.kind === 'enemy' || (a.kind === 'police' && S.wanted > 0 && !S.isRecognizedNinja))) dot(a.pos.x, a.pos.z, a.kind === 'police' ? '#3bb0ff' : '#ff3b3b', 3);
     if (Game.ally && S.allyWith && !Game.ally.hidden) dot(Game.ally.pos.x, Game.ally.pos.z, '#7fffe0', 4);
+    if (S.wanted > 0 && Crime.lastPos && !S.isRecognizedNinja) { g.strokeStyle = Crime.seen ? 'rgba(255,59,59,.8)' : 'rgba(59,176,255,.7)'; g.lineWidth = 3 / sc; g.beginPath(); g.arc(Crime.lastPos.x, Crime.lastPos.z, Crime.searchRadius(), 0, Math.PI * 2); g.stroke(); }
     const tgt = Missions.target; if (tgt) dot(tgt[0], tgt[1], '#ffd23b', 7);
     if (S.waypoint) dot(S.waypoint[0], S.waypoint[1], '#ff2fd6', 6);
     g.restore();
@@ -228,7 +229,7 @@ UI = {
       ${S.storage.map((w, i) => `<div class="card"><b>${WEAPONS[w].icon} ${WEAPONS[w].name}</b>Depoda<div class="row">${this.btn('Al ⬆', () => { this.takeFromStorage(i); this.safehouseMenu(id); }, 'alt')}</div></div>`).join('')}</div>`);
   },
   async sleep() {
-    this.closePanel(); await this.fade(1); S.time = (S.time + 8) % 24; if (S.time < 8) S.day++; Game.player.hp = Game.player.maxHp; Player.energy = 100; S.wanted = 0; Crime.clear(); saveGame(); await this.fade(0); this.toast('😴 Dinlendin. Saat ' + Sky.label());
+    this.closePanel(); await this.fade(1); S.time = (S.time + 8) % 24; if (S.time < 8) S.day++; Game.player.hp = Game.player.maxHp; Player.energy = 100; Crime.clear(); saveGame(); await this.fade(0); this.toast('😴 Dinlendin. Saat ' + Sky.label());
   },
   modShop() {
     const p = Game.player.pos;
@@ -263,8 +264,8 @@ UI = {
   },
   // ---------------------------------------------------------- Duraklat / ayarlar
   pause() {
-    this.showPanel('pause', `<h2>⏸ Duraklatıldı</h2><div class="row" style="flex-direction:column;align-items:stretch">${this.btn('▶ Devam', () => this.closePanel())}${this.btn('💾 Kaydet', () => { saveGame(); this.toast('Kaydedildi'); })}${this.btn('📱 Telefon', () => this.phone())}${this.btn('⚙ Ayarlar', () => this.settings())}${this.btn('🛠 Admin Paneli', () => this.admin())}${this.btn('🏠 Ana Menü', () => { saveGame(); location.reload(); }, 'warn')}</div>
-      <p style="font-size:12px;color:var(--dim)">${Input.device === 'kbm' ? 'Klavye/Fare' : Input.device === 'pad' ? 'Gamepad' : 'Dokunmatik'} algılandı.</p>`);
+    this.showPanel('pause', `<h2>⏸ Duraklatıldı</h2><div class="row" style="flex-direction:column;align-items:stretch">${this.btn('▶ Devam', () => this.closePanel())}${this.btn('💾 Kaydet', () => { saveGame(); this.toast('Kaydedildi'); })}${this.btn('📱 Telefon', () => this.phone())}${this.btn('⚙ Ayarlar', () => this.settings())}${this.btn('🛠 Admin Paneli', () => this.admin())}${this.btn('🔄 Güncellemeleri denetle', () => AutoUpdater.check(true))}${this.btn('🏠 Ana Menü', () => { saveGame(); location.reload(); }, 'warn')}</div>
+      <p style="font-size:12px;color:var(--dim)">Sürüm ${NG_VERSION}${localStorage.getItem(PKG_VER_KEY) ? ' (güncelleme paketi)' : ''} · ${Input.device === 'kbm' ? 'Klavye/Fare' : Input.device === 'pad' ? 'Gamepad' : 'Dokunmatik'} algılandı.</p>`);
     Game.paused = true; const el = $('pause'); const obs = new MutationObserver(() => { if (el.classList.contains('hidden')) { Game.paused = false; obs.disconnect(); } }); obs.observe(el, { attributes: true });
   },
   settings() {
@@ -275,9 +276,13 @@ UI = {
       <div class="row"><label><input type="checkbox" id="st_sh" ${s.shadows ? 'checked' : ''}> Gölgeler</label> <label><input type="checkbox" id="st_inv" ${s.invertY ? 'checked' : ''}> Y eksenini ters çevir</label> <label><input type="checkbox" id="st_fps" ${s.showFps ? 'checked' : ''}> FPS</label> <label><input type="checkbox" id="st_tf" ${s.touchForce ? 'checked' : ''}> Dokunmatik kontrolleri zorla</label></div>
       <div class="row">Hassasiyet <input type="range" id="st_se" min="0.3" max="2.5" step="0.1" value="${s.sens}"></div>
       <div class="row">Zaman hızı (oyun sn / gerçek sn) <input type="range" id="st_ts" min="10" max="240" step="10" value="${s.timeScale}"> <span id="st_tsv">${s.timeScale}</span></div>
+      <div class="row">Karakter/araç modelleri <select id="st_mm"><option value="library">Hazır 3D modeller (internet + önbellek)</option><option value="block">Blok figürler (çevrimdışı)</option></select> <small>(yeniden başlatır)</small></div>
+      <div class="row"><label><input type="checkbox" id="st_bl" ${s.bloom ? 'checked' : ''}> Neon parlaması (bloom)</label></div>
+      <div class="row">Güncelleme adresi <input id="st_up" placeholder="boş = varsayılan (GitHub)" value="${s.updateUrl || ''}" style="flex:1"></div>
+      <div class="row">${this.btn('🔄 Güncellemeleri denetle', () => AutoUpdater.check(true), 'alt')}${this.btn('↩ Yerleşik sürüme dön', () => AutoUpdater.rollback(), 'warn')}<small>Sürüm ${NG_VERSION}</small></div>
       <div class="row">Ses <input type="range" id="st_vo" min="0" max="1" step="0.05" value="${s.volume}"></div>
-      <div class="row">${this.btn('Kaydet', () => { const q = $('st_q').value, reload = q !== s.quality || $('st_sh').checked !== s.shadows; s.quality = q; s.viewDist = +$('st_vd').value; s.shadows = $('st_sh').checked; s.invertY = $('st_inv').checked; s.showFps = $('st_fps').checked; s.touchForce = $('st_tf').checked; s.sens = +$('st_se').value; s.timeScale = +$('st_ts').value; s.volume = +$('st_vo').value; saveSettings(); if (reload) { saveGame(); location.reload(); } else { Game.camera.far = s.viewDist + 200; Game.camera.updateProjectionMatrix(); Render.sky.scale.setScalar(s.viewDist + 100); this.closePanel(); } })}</div>`);
-    $('st_q').value = s.quality; $('st_vd').oninput = (e) => $('st_vdv').textContent = e.target.value; $('st_ts').oninput = (e) => $('st_tsv').textContent = e.target.value;
+      <div class="row">${this.btn('Kaydet', () => { const q = $('st_q').value, reload = q !== s.quality || $('st_sh').checked !== s.shadows || $('st_mm').value !== s.modelMode || $('st_bl').checked !== s.bloom; s.modelMode = $('st_mm').value; s.bloom = $('st_bl').checked; s.updateUrl = $('st_up').value.trim(); s.quality = q; s.viewDist = +$('st_vd').value; s.shadows = $('st_sh').checked; s.invertY = $('st_inv').checked; s.showFps = $('st_fps').checked; s.touchForce = $('st_tf').checked; s.sens = +$('st_se').value; s.timeScale = +$('st_ts').value; s.volume = +$('st_vo').value; saveSettings(); if (reload) { saveGame(); location.reload(); } else { Game.camera.far = s.viewDist + 200; Game.camera.updateProjectionMatrix(); Render.sky.scale.setScalar(s.viewDist + 100); this.closePanel(); } })}</div>`);
+    $('st_q').value = s.quality; $('st_mm').value = s.modelMode || 'library'; $('st_vd').oninput = (e) => $('st_vdv').textContent = e.target.value; $('st_ts').oninput = (e) => $('st_tsv').textContent = e.target.value;
   },
   // ---------------------------------------------------------- ADMIN PANELİ
   async admin() {

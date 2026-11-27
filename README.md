@@ -60,6 +60,7 @@ Uygulama, assets klasörünü `127.0.0.1:48219` üzerinden sunar. Bu sayede ES m
 |---|---|---|---|
 | Hareket / Kamera | WASD / Fare (tıkla = imleç kilidi) | Sol / Sağ çubuk | Sol joystick / sağ yarıyı sürükle |
 | Koş | Shift | L3 | KOŞ (veya joystick sonuna kadar) |
+| Atılma (dash) | C | Ⓑ (yakında etkileşim yoksa) | ATIL |
 | Zıpla · Havada süzül (basılı) | Boşluk | Ⓐ | ZIPLA |
 | Vuruş kombosu | Sol tık / J | Ⓧ / RT | VUR |
 | Metal şok dalgası | Sağ tık / L | Ⓨ / LT | ŞOK |
@@ -74,7 +75,7 @@ Uygulama, assets klasörünü `127.0.0.1:48219` üzerinden sunar. Bu sayede ES m
 | Telefon | Tab / P | Back | 📱 |
 | Ela'yı çağır | G | (telefon) | 📞 |
 | Araçta: el freni · korna · radyo | Boşluk · H · N | Ⓐ · Ⓧ · — | — |
-| Ejderhada: yüksel · alçal · ateş | Boşluk · Shift/C · Sol tık | Ⓐ · R3 · RT | — |
+| Ejderhada: yüksel · alçal · ateş | Boşluk · Shift/C/Ctrl · Sol tık | Ⓐ · R3 · RT | — |
 | Duraklat / Sinematiği atla | Esc | Start | ⏸ / "Atla" |
 | Admin paneli | F10 (veya Ctrl+`) | — | Duraklat menüsü |
 
@@ -87,7 +88,7 @@ Uygulama, assets klasörünü `127.0.0.1:48219` üzerinden sunar. Bu sayede ES m
 | Durum, kayıt, olay veriyolu | `01_core.js` | `S` = oyun durumu (`reputation`, `isRecognizedNinja`, `wanted`, `bondLevel`, `morality`…). localStorage'a otomatik kayıt (60 sn'de bir + görev sonu). |
 | Veri | `02_data.js` | Karakterler, mekanlar, silahlar, araçlar, **24 ana görev**, **7 yan görev**, **5 aktivite**, **6 Easter Egg**, 45 diyalog, 13 sinematik, radyo. |
 | Önbellek / Supabase / Rig | `03_cache.js` | IndexedDB sürüm+zaman damgası kontrolü; değişmeyen varlık indirilmeden anında yüklenir. Rig eklem noktaları da önbelleğe yazılır. |
-| Render | `04_render.js` | ABS plastik materyaller, dünya-konumlu pencere shader'ı (gece yanan camlar), ıslak asfalt birikintileri, dalgalı su, gökyüzü (yıldızlar, Vice City mor-pembe ufuk), gün/gece, yağmur/fırtına/şimşek, efekt havuzu, neon ışık havuzu. |
+| Render | `04_render.js` | ABS plastik materyaller, dünya-konumlu pencere shader'ı (gece yanan camlar), ıslak asfalt birikintileri, dalgalı su, gökyüzü (yıldızlar, 80ler neon gecesi mor-pembe ufuk), gün/gece, yağmur/fırtına/şimşek, efekt havuzu, neon ışık havuzu. |
 | Dünya | `05_world.js` | ~1200×1200 m şehir: Liman, Eski Çarşı, Dağ Manastırı, Neon Bulvar, Teknoloji Merkezi (170 m kule + teraslar), Doğu Konutları, Güvenlikli Ada. Kanal köprüleri, ada köprüsü, iskeleler, ara sokaklar, dağ patikası. 160 m'lik parçalarda instancing + mesafe culling, çarpışma ızgarası. |
 | Figür + iskelet | `06_figure.js` | `head/torso/arm_L/arm_R/leg_L/leg_R` pivotları, prosedürel poz animasyonu (yürü, koş, süzül, sür, otur, kasırga…), parçalar pivot başına tek geometriye birleştirilir (düşük çizim çağrısı). |
 | Giriş | `07_input.js` | Tek `InputManager`: klavye/fare, gamepad, dokunmatik. |
@@ -202,6 +203,24 @@ Sonra Admin → Supabase alanına **Project URL** ve **anon key** gir → Kaydet
 **Animasyonlar:** `idle, walk, run, jump, glide, spin, drive, ride, sit, cheer, kneel, hurt, cower, swim, ko, umbrella, focus`.
 
 ---
+
+## 8.5 Sürüm 1.1 yenilikleri
+
+**Hazır 3D modeller:** İlk açılışta açık kaynak GLB modeller indirilir (three.js örnek modelleri, raw.githubusercontent / jsDelivr / threejs.org aynalarından sırayla denenir) ve IndexedDB'ye kaydedilir. Sonraki açılışlarda yeniden indirilmez. İnsan karakterleri `Xbot` (Idle/Walk/Run klipleri), muhafız ve polisler `Soldier`, Çekirdek Muhafızları ve Mimar `RobotExpressive` (Jump/Punch/Death dahil), spor araba `ferrari.glb` (DRACO) ile gelir. Karakterler kostüm renklerine boyanır; Kaan ve Ela'nın saç ve maskesi kafa kemiğine takılır. İnternet yoksa çok parçalı, yuvarlatılmış blok figürler kullanılır. Ayarlar'da "Blok figürler" seçilerek tamamen çevrimdışı mod açılabilir.
+Ağaç, sokak lambası ve bank için Admin → "Bu slota yükle / URL ata" ile `lib_tree`, `lib_lamp` ve `lib_bench` slotlarına kendi .glb modellerini (ör. Kenney/Quaternius) verebilirsin. Şehir bu modelleri instanced olarak dizer.
+
+**Animasyon:** GLB'deki klipler `AnimationMixer` ile `crossFadeTo` geçişli oynatılır. Kombo yumruk/tekme, şok dalgası, süzülme ve kasırga pozları kemiklere katman olarak eklenir. Blok figürlerde nefes alma, koşarken öne eğilme ve kalça-omuz karşı salınımı var.
+
+**Görsel:** Yumuşak gölgeler (PCFSoft, oyuncuyu izleyen texel hizalı geniş gölge kamerası), ACES ton eşleme, clearcoat'lu plastik, neon bloom (orta/yüksek kalite), FogExp2 derinlik sisi.
+
+**Hareket:** Daha hızlı yürüme/koşma, anında dönüş, atılma (dash), yaylı (smooth damp) kamera, koşarken FOV açılması, darbede mikro sarsıntı.
+
+**Aranma (WantedSystem):** Suçlar "ısı" üretir; yıldızlar 12/30/50/70/88 eşiklerinde artar. Isı yalnızca tanık varsa eklenir: polis görüş hattı varsa hemen, sivil ihbarında 3 sn sonra ve daha az. Hafif çarpmalar çok düşük ısı verir. Görüşten çıkınca ısı soğur; mini haritadaki arama çemberinin dışında daha hızlı soğur. Polis, gözden kaybettiğinde son görüldüğün yeri arar.
+
+**NPC ve trafik:** Engelden kaçınma (önü tarayıp sağa-sola sapma), takılma kurtarma, kavşaklarda 8 sn'lik sırayla yanan ışıklarda duran trafik. Ela takılırsa ya da çok geride kalırsa yanına yetişir.
+
+**Otomatik güncelleme (AutoUpdater):** Oyun açılışta ve menüden `game/version.json` dosyasını kontrol eder (GitHub → jsDelivr → isteğe bağlı Supabase `ng-assets/version.json` → Ayarlar'daki özel adres). Yeni sürüm varsa notlar ve ilerleme çubuğuyla dosyaları indirir, SHA-256 ile doğrular, servis çalışanı önbelleğine (`sw.js`) uygular ve oyunu yeniden başlatır (Electron: `app.relaunch()`). Yeni .exe/.apk kurulursa eski paket önbelleği kendiliğinden temizlenir. Ayarlar → "Yerleşik sürüme dön" ile geri alınabilir. Kabuk güncellemeleri: kurulumlu Windows sürümünde `electron-updater` (GitHub Releases); APK'da `minShell` yeni APK gerektirirse indirme bağlantısı açılır.
+Yeni bir içerik güncellemesi yayınlamak için: `VERSION` dosyasını artır → `sh tools/build.sh` → `node tools/make-version.mjs "notlar"` → GitHub'a gönder.
 
 ## 9. Test adımları (kontrol listesi)
 

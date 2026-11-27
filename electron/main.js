@@ -1,7 +1,23 @@
 // Neon Gölgeler — Electron masaüstü kabuğu (Windows .exe)
 // Oyunu 127.0.0.1 üzerinde küçük bir yerel sunucudan açar: ES modülleri, IndexedDB
 // önbelleği ve Supabase istekleri file:// kısıtlarına takılmadan çalışır.
-const { app, BrowserWindow, Menu, shell } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require('electron');
+let autoUpdater = null; try { ({ autoUpdater } = require('electron-updater')); } catch (e) { /* geliştirme ortamı */ }
+
+// ---- kabuk köprüsü (preload.js) + otomatik yeniden başlatma
+ipcMain.on('ng:version', (e) => { e.returnValue = app.getVersion(); });
+ipcMain.on('ng:relaunch', () => { app.relaunch(); app.exit(0); });
+ipcMain.on('ng:shell-update', () => { if (autoUpdater) autoUpdater.checkForUpdates().catch(() => {}); });
+function setupShellUpdater(win) {
+  // Kurulumlu (Setup) sürümde kabuk güncellemeleri GitHub Releases'tan gelir (taşınabilir sürümde devre dışı)
+  if (!autoUpdater || !app.isPackaged || process.env.PORTABLE_EXECUTABLE_DIR) return;
+  autoUpdater.autoDownload = true;
+  autoUpdater.on('update-downloaded', async () => {
+    const r = await dialog.showMessageBox(win, { type: 'info', buttons: ['Şimdi yeniden başlat', 'Sonra'], title: 'Neon Gölgeler', message: 'Uygulama güncellemesi indirildi. Yeniden başlatılsın mı?' });
+    if (r.response === 0) autoUpdater.quitAndInstall();
+  });
+  autoUpdater.checkForUpdates().catch(() => {});
+}
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -33,7 +49,7 @@ async function createWindow() {
   const win = new BrowserWindow({
     width: 1600, height: 900, minWidth: 960, minHeight: 540, backgroundColor: '#05030f', title: 'Neon Gölgeler',
     autoHideMenuBar: true,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
+    webPreferences: { contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, preload: path.join(__dirname, 'preload.js') }
   });
   Menu.setApplicationMenu(null);
   win.webContents.on('before-input-event', (e, input) => {
@@ -42,6 +58,7 @@ async function createWindow() {
   });
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
   win.loadURL(`http://127.0.0.1:${port}/index.html`);
+  setupShellUpdater(win);
 }
 
 app.commandLine.appendSwitch('enable-gpu-rasterization');

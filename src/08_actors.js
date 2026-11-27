@@ -49,8 +49,10 @@ class Actor {
     this.hp -= amount; this.st.hit = 1; this.stun = Math.max(this.stun, opt.stun || 0.18);
     if (opt.knock && from) { const dx = this.pos.x - from.pos.x, dz = this.pos.z - from.pos.z, l = Math.hypot(dx, dz) || 1; this.kb.set(dx / l * opt.knock, 0, dz / l * opt.knock); if (opt.lift) this.vel.y = opt.lift; }
     FX.burst(_v1.set(this.pos.x, this.pos.y + 1.2, this.pos.z), this.kind === 'player' && this.metalOn ? '#e8f0ff' : opt.color || '#ffd23b', 6, 5, 0.12, 0.4);
-    if (from && from.kind === 'player') Crime.onPlayerHit(this);
+    if (this.kind === 'player') Cam.shake = Math.max(Cam.shake, 0.14); else if (from && from.kind === 'player') Cam.shake = Math.max(Cam.shake, 0.06);
+    if (from && from.kind === 'player') { if (this.hp - amount <= 0 && this.hp > 0) this._koHit = true; }
     if (this.boss && this.def && this.def.onHit) this.def.onHit(this);
+    if (from && from.kind === 'player' && !opt.noCrime) Crime.onPlayerHit(this, opt);
     if (this.hp <= 0) this.die(from);
     else if (this.ai && from && this.kind !== 'player') { this.ai.aggro = from; if (this.kind === 'civ') Population.panic(this, from.pos); }
   }
@@ -80,7 +82,7 @@ class Actor {
       return;
     }
     // Yatay hız
-    const acc = this.onGround || this.fly ? 12 : 3.5;
+    const acc = this.onGround || this.fly ? (this.accel || 12) : (this.kind === 'player' ? 9 : 3.5);
     const wx = this.stun > 0 ? 0 : this.want.x, wz = this.stun > 0 ? 0 : this.want.z;
     this.vel.x = lerp(this.vel.x, wx, Math.min(1, dt * acc)); this.vel.z = lerp(this.vel.z, wz, Math.min(1, dt * acc));
     this.pos.x += (this.vel.x + this.kb.x) * dt; this.pos.z += (this.vel.z + this.kb.z) * dt;
@@ -90,7 +92,7 @@ class Actor {
       const g = World.groundAt(this.pos.x, this.pos.z, this.pos.y);
       const ty = (this.flyY ?? g + 3.2); this.pos.y = lerp(this.pos.y, Math.max(ty, g + 1.5) + Math.sin(Game.t * 2 + this.yaw) * 0.3, dt * 3); this.onGround = false;
     } else {
-      if (this.gliding) this.vel.y = Math.max(this.vel.y - 6 * dt, -2.0); else this.vel.y -= 24 * dt;
+      if (this.gliding) this.vel.y = Math.max(this.vel.y - 6 * dt, -2.0); else this.vel.y -= (this.kind === 'player' ? 30 : 24) * dt;
       this.pos.y += this.vel.y * dt;
     }
     World.collide(this.pos, this.radius, this.height);
@@ -121,7 +123,7 @@ class Actor {
     r.visible = !this.hidden;
     if (this.hidden) return;
     r.position.copy(this.pos);
-    if (!this.alive) { r.rotation.set(-Math.PI / 2 * Math.min(1, this.koT * 4), this.yaw, 0); r.position.y += 0.25; }
+    if (!this.alive) { if (this.fig.skinned && this.fig.actions.death) r.rotation.set(0, this.yaw, 0); else { r.rotation.set(-Math.PI / 2 * Math.min(1, this.koT * 4), this.yaw, 0); r.position.y += 0.25; } }
     else { r.rotation.x = 0; r.rotation.z = 0; if (this.spinT > 0) { this.spinAng = (this.spinAng || 0) + dt * 22; r.rotation.y = this.spinAng; } else r.rotation.y = this.yaw; }
     this.fig.setUmbrella(this.umbrella && this.alive);
     // Mesafe tabanlı animasyon LOD
@@ -216,7 +218,12 @@ const Sound = {
 };
 
 // ---------------------------------------------------------------- Kamera
+function smoothDampV(cur, target, vel, t, dt) {
+  const o = 2 / Math.max(0.0001, t), x = o * dt, e = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
+  for (const k of ['x', 'y', 'z']) { const ch = cur[k] - target[k], tmp = (vel[k] + o * ch) * dt; vel[k] = (vel[k] - o * tmp) * e; cur[k] = target[k] + (ch + tmp) * e; }
+}
 const Cam = {
+  cv: new THREE.Vector3(), lv: new THREE.Vector3(),
   yaw: Math.PI, pitch: 0.28, dist: 6.5, cur: new THREE.Vector3(), look: new THREE.Vector3(), shake: 0, override: null,
   update(dt) {
     if (this.override) return; // sinematik oynatıcı kontrol ediyor
@@ -239,12 +246,15 @@ const Cam = {
       if (blocked) { tMax = Math.max(0.12, (i - 1) / 10); break; }
     }
     desired.lerpVectors(target, desired, tMax);
-    this.cur.lerp(desired, Math.min(1, dt * 12));
-    this.look.lerp(target, Math.min(1, dt * 16));
+    // yaylı (smooth damp) takip — gecikmesiz ve sarsıntısız; engelde anında yaklaş
+    const st = p.vehicle ? 0.14 : p.dragon ? 0.2 : 0.07;
+    if (tMax < 1 && this.cur.distanceTo(target) > desired.distanceTo(target)) this.cur.copy(desired);
+    else smoothDampV(this.cur, desired, this.cv, st, dt);
+    smoothDampV(this.look, target, this.lv, 0.04, dt);
     const cam = Game.camera; cam.position.copy(this.cur);
     if (this.shake > 0) { this.shake -= dt; cam.position.x += rand(-1, 1) * this.shake * 0.5; cam.position.y += rand(-1, 1) * this.shake * 0.5; }
     cam.lookAt(this.look);
-    const fov = p.vehicle ? 62 + clamp(p.vehicle.speed, 0, 50) * 0.25 : p.dragon ? 72 : 62;
+    const fov = p.vehicle ? 62 + clamp(p.vehicle.speed, 0, 50) * 0.28 : p.dragon ? 74 : (p.dashT > 0 ? 74 : 62 + clamp(Math.hypot(p.vel.x, p.vel.z) - 6, 0, 6) * 1.1);
     if (Math.abs(cam.fov - fov) > 0.1) { cam.fov = lerp(cam.fov, fov, dt * 3); cam.updateProjectionMatrix(); }
   },
   snap() { const p = Game.player; if (!p) return; this.cur.set(p.pos.x + Math.sin(this.yaw) * 6, p.pos.y + 3, p.pos.z + Math.cos(this.yaw) * 6); this.look.set(p.pos.x, p.pos.y + 1.6, p.pos.z); },
@@ -256,7 +266,7 @@ const Player = {
   a: null, energy: 100, maxEnergy: 100, wheelOpen: false, lastSafe: null,
   create(pos) {
     const a = new Actor({ kind: 'player', team: 'player', cast: 'Hero_Main', outfit: S.outfit, pos, hp: 120, persistent: true });
-    a.fig.setMask(S.mask); a.persistent = true; a.spinT = 0;
+    a.fig.setMask(S.mask); a.persistent = true; a.spinT = 0; a.accel = 34;
     a.tornado = this.makeTornado('#c9d3df'); Game.scene.add(a.tornado);
     Game.player = this.a = a; this.applyGymBonus();
     return a;
@@ -281,14 +291,23 @@ const Player = {
     const fw = Cam.forward(), rt = _v2.set(-fw.z, 0, fw.x);
     const dir = _v3.set(fw.x * my + rt.x * mx, 0, fw.z * my + rt.z * mx);
     const mag = Math.min(1, dir.length());
-    let speed = Input.isDown('sprint') ? 9.0 : 4.6;
+    let speed = Input.isDown('sprint') ? 11.5 : 6.2;
     if (a.metalOn) speed *= 0.72; if (a.spinT > 0) speed = 10; if (a.swim) speed = 3.2;
-    if (mag > 0.05) { dir.normalize(); a.want.set(dir.x * speed * mag, 0, dir.z * speed * mag); a.yaw = angLerp(a.yaw, Math.atan2(dir.x, dir.z), Math.min(1, dt * 14)); }
+    if (mag > 0.05) { dir.normalize(); a.want.set(dir.x * speed * mag, 0, dir.z * speed * mag); a.yaw = angLerp(a.yaw, Math.atan2(dir.x, dir.z), Math.min(1, dt * 22)); }
     else a.want.set(0, 0, 0);
     if (a.poseOverride && mag > 0.1) a.poseOverride = null;
     // Zıplama / süzülme
     a.gliding = false;
-    if (ctl && Input.pressed('jump') && (a.onGround || a.swim)) { a.vel.y = a.swim ? 6 : 8.6; a.onGround = false; Sound.beep(300, 0.06, 'sine', 0.04); }
+    // atılma (dash): kısa, hızlı, kısa dokunulmazlık
+    a.dashT = Math.max(0, (a.dashT || 0) - dt); a.dashCd = Math.max(0, (a.dashCd || 0) - dt);
+    const dashPressed = ctl && (Input.pressed('dash') || (Input.device === 'pad' && Input.pressed('interact') && !Interact.cur));
+    if (dashPressed && a.dashCd <= 0 && this.energy >= 8 && !a.swim) {
+      this.energy -= 8; a.dashT = 0.2; a.dashCd = 0.55; a.invuln = true; setTimeout(() => { a.invuln = false; }, 220);
+      const dd = mag > 0.05 ? _v2.set(dir.x, 0, dir.z) : _v2.set(Math.sin(a.yaw), 0, Math.cos(a.yaw)); a.yaw = Math.atan2(dd.x, dd.z);
+      a.vel.x = dd.x * 22; a.vel.z = dd.z * 22; FX.ring(a.pos, '#c9d3df', 2.5, 0.25); Sound.beep(420, 0.08, 'triangle', 0.05);
+    }
+    if (a.dashT > 0) { a.want.set(Math.sin(a.yaw) * 22, 0, Math.cos(a.yaw) * 22); if (Math.random() < 0.8) FX.trail(_v1.set(a.pos.x, a.pos.y + 1, a.pos.z), a.metalOn ? '#e8f0ff' : '#7a5cff', 0.25, 0.3); }
+    if (ctl && Input.pressed('jump') && (a.onGround || a.swim)) { a.vel.y = a.swim ? 6 : 10.2; a.onGround = false; Sound.beep(300, 0.06, 'sine', 0.04); }
     if (ctl && S.abilities.glide && !a.onGround && Input.isDown('jump') && a.vel.y < 0) {
       a.gliding = true; const f = _v2.set(Math.sin(a.yaw), 0, Math.cos(a.yaw)); a.want.addScaledVector(f, 7);
       if (Math.random() < 0.4) FX.trail(_v1.set(a.pos.x, a.pos.y + 1.2, a.pos.z), '#7fffe0', 0.15, 0.5);
@@ -382,7 +401,7 @@ const Player = {
     setTimeout(async () => {
       await UI.fade(1);
       const a = this.a; a.alive = true; a.hp = a.maxHp; this.energy = 100; this.metalOff();
-      S.wanted = 0; changeMoney(-Math.floor(S.money * 0.1));
+      Crime.clear(); changeMoney(-Math.floor(S.money * 0.1));
       const sp = this.respawnPoint(); a.pos.set(sp[0], World.surfaceAt(sp[0], sp[1]), sp[1]); a.vel.set(0, 0, 0);
       Cam.snap(); Population.clearHostiles(); saveGame();
       await UI.fade(0);
@@ -425,7 +444,7 @@ const Ally = {
     if (a.vehicle && !p.vehicle) Vehicles.exit(a, false);
     a.hidden = !!p.dragon; if (p.dragon) { a.pos.copy(p.pos); return; }
     const d = a.distTo(p);
-    if (d > 70 || Math.abs(a.pos.y - p.pos.y) > 12) { a.pos.set(p.pos.x - Math.sin(p.yaw) * 3, p.pos.y, p.pos.z - Math.cos(p.yaw) * 3); a.vel.set(0, 0, 0); FX.burst(_v1.copy(a.pos).setY(a.pos.y + 1), '#7fffe0', 14, 5); }
+    if (d > 45 || Math.abs(a.pos.y - p.pos.y) > 12 || (a._stuck > 1 && d > 15)) { a.pos.set(p.pos.x - Math.sin(p.yaw) * 3, p.pos.y, p.pos.z - Math.cos(p.yaw) * 3); a.vel.set(0, 0, 0); FX.burst(_v1.copy(a.pos).setY(a.pos.y + 1), '#7fffe0', 14, 5); }
     a.umbrella = Sky.rainAmt > 0.3 && !Game.combat && S.outfit === 'civil';
     // Hedef
     let tgt = null, td = 22 * 22;
@@ -442,12 +461,36 @@ const Ally = {
     } else {
       const side = _v1.set(p.pos.x + Math.cos(p.yaw) * 2.2 - Math.sin(p.yaw) * 1.6, 0, p.pos.z - Math.sin(p.yaw) * 2.2 - Math.cos(p.yaw) * 1.6);
       const dd = Math.sqrt(dist2(side.x, side.z, a.pos.x, a.pos.z));
-      if (dd > 1.2) this.moveTo(a, side, dd > 8 ? 9 : dd > 3 ? 5.5 : 3.5); else { a.want.set(0, 0, 0); a.yaw = angLerp(a.yaw, p.yaw, dt * 3); }
+      const psp = Math.hypot(p.vel.x, p.vel.z);
+      if (dd > 1.0) this.moveTo(a, side, dd > 7 ? 12.5 : dd > 3 ? Math.max(6.5, psp * 1.1) : Math.max(3.5, psp)); else { a.want.set(0, 0, 0); a.yaw = angLerp(a.yaw, p.yaw, dt * 3); }
       if (p.vel.y > 4 && a.onGround && d < 6) a.vel.y = 8.6;
     }
     a.gliding = !a.onGround && a.vel.y < 0 && S.abilities.glide;
   },
-  moveTo(a, t, sp) { const dx = t.x - a.pos.x, dz = t.z - a.pos.z, l = Math.hypot(dx, dz) || 1; a.want.set(dx / l * sp, 0, dz / l * sp); a.yaw = angLerp(a.yaw, Math.atan2(dx, dz), 0.2); }
+  // Yönlendirme (steering): önü tara, engel/su varsa sağa-sola sap; takılırsa yan adım at
+  blocked(x, z, y) {
+    if (World.baseHeight(x, z) < WATER_Y && World.groundAt(x, z, y + 0.7) < WATER_Y) return true;
+    for (const b of World.nearBoxes(x, z)) if (!b.dead && x > b.x0 - 0.35 && x < b.x1 + 0.35 && z > b.z0 - 0.35 && z < b.z1 + 0.35 && y < b.y1 - 0.65 && y + 1.8 > b.y0) return true;
+    return false;
+  },
+  moveTo(a, t, sp) {
+    let dx = t.x - a.pos.x, dz = t.z - a.pos.z; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
+    if (a.fly) { a.want.set(dx * sp, 0, dz * sp); a.yaw = angLerp(a.yaw, Math.atan2(dx, dz), 0.2); return; }
+    const look = Math.min(l, 1.8);
+    if (this.blocked(a.pos.x + dx * look, a.pos.z + dz * look, a.pos.y)) {
+      const side = a._steerSide || (a._steerSide = Math.random() < 0.5 ? 1 : -1);
+      let ok = false;
+      outer: for (const ang of [0.6, 1.1, 1.6, 2.2]) for (const sd of [side, -side]) {
+        const c = Math.cos(ang * sd), s2 = Math.sin(ang * sd), nx = dx * c - dz * s2, nz = dx * s2 + dz * c;
+        if (!this.blocked(a.pos.x + nx * 1.6, a.pos.z + nz * 1.6, a.pos.y)) { dx = nx; dz = nz; ok = true; a._steerSide = sd; break outer; }
+      }
+    }
+    // takılma algılama
+    const moving = Math.hypot(a.vel.x, a.vel.z);
+    if (sp > 1 && moving < 0.35 && a.onGround) a._stuck = (a._stuck || 0) + Game.dt; else a._stuck = Math.max(0, (a._stuck || 0) - Game.dt);
+    if (a._stuck > 1.2) { a._stuck = 0; a._steerSide = -(a._steerSide || 1); if (a.kind === 'civ' && a.ai && a.ai.mode === 'walk') { const n = World.roadNodes[a.ai.to]; if (n && n.n.length) { a.ai.from = a.ai.to; a.ai.to = pick(n.n); } } a.vel.x += -dz * 3 * a._steerSide; a.vel.z += dx * 3 * a._steerSide; }
+    a.want.set(dx * sp, 0, dz * sp); a.yaw = angLerp(a.yaw, Math.atan2(dx, dz), 0.25);
+  }
 };
 
 // ---------------------------------------------------------------- Dost NPC'ler (ustalar vb.)
@@ -509,6 +552,7 @@ const Enemies = {
         continue;
       }
       if (tgt.kind === 'player' || tgt.kind === 'ally') Game.combat = true;
+      if (a.kind === 'police' && tgt.kind === 'player' && !Crime.seen && Crime.lastPos && a.distTo(tgt) > 12) { Ally.moveTo(a, Crime.lastPos, a.moveSpeed * 0.9); continue; }
       const d = a.distTo(tgt);
       a.face(tgt.pos.x, tgt.pos.z, Math.min(1, dt * 8));
       if (a.boss && a.def && a.def.think) { a.def.think(a, tgt, dt, d); continue; }
@@ -554,47 +598,86 @@ const Bosses = {
   } }
 };
 
-// ---------------------------------------------------------------- Suç & aranma
+// ---------------------------------------------------------------- WantedSystem (ısı tabanlı aranma)
+// Suçlar "ısı" (0..100) üretir; yıldızlar eşiklerden türetilir. Isı yalnızca tanık (polis görüş
+// hattı ya da ihbar eden sivil) varsa eklenir. Polis görmüyorsa arama yarıçapı dışında hızlı,
+// içinde yavaş soğur. isRecognizedNinja=true iken ısı oluşmaz, polis yalnızca suçlulara odaklanır.
+const HEAT_STARS = [12, 30, 50, 70, 88];
+const CRIME_W = { civAssault: 6, civKO: 10, copAssault: 12, copKO: 20, weapon: 4, carjack: 10, bump: 1.5, runover: 9, zone: 28 };
 const Crime = {
-  lastSeen: 0, decayT: 0,
-  onPlayerHit(t) {
-    if (S.isRecognizedNinja) { if (t.team === 'civ') { changeRep(-1); } return; }
-    if (t.team === 'civ' || t.team === 'police') this.commit(t.team === 'police' ? 1 : (S.wanted ? 0.34 : 1), t.team === 'police' ? 'polise saldırı' : 'sivile saldırı');
+  lastSeen: -999, decayT: 0, lastPos: null, pending: [], seen: false,
+  starsOf(h) { let n = 0; for (const t of HEAT_STARS) if (h >= t) n++; return n; },
+  get stars() { return S.wanted; },
+  searchRadius() { return 40 + S.wanted * 25; },
+  policeWitness(pos, r = 45) {
+    for (const a of Game.actors) if (a.kind === 'police' && a.alive && dist2(a.pos.x, a.pos.z, pos.x, pos.z) < r * r && World.lineClear(a.pos.x, a.pos.z, pos.x, pos.z, a.pos.y + 1.5)) return a;
+    return null;
   },
-  weaponSeen() { const p = Game.player.pos; if (Game.actors.some(a => a.kind === 'police' && a.alive && dist2(a.pos.x, a.pos.z, p.x, p.z) < 30 * 30)) this.commit(0.25, 'silah kullanımı'); },
-  zone(name) { if (S.isRecognizedNinja) return; if (S.wanted < 2) { this.commit(2 - S.wanted, name); } },
-  commit(amount, why) {
+  civWitness(pos, r = 26) {
+    for (const c of Population.civs) if (c.alive && c.ai.mode !== 'cower' && dist2(c.pos.x, c.pos.z, pos.x, pos.z) < r * r && World.lineClear(c.pos.x, c.pos.z, pos.x, pos.z, c.pos.y + 1.5)) return c;
+    return null;
+  },
+  onPlayerHit(t, opt = {}) {
+    if (S.isRecognizedNinja) { if (t.team === 'civ') changeRep(-0.5); return; }
+    if (t.team !== 'civ' && t.team !== 'police') return;
+    let w;
+    if (opt.vehicle) w = opt.speed > 10 ? CRIME_W.runover : CRIME_W.bump;
+    else w = t.team === 'police' ? CRIME_W.copAssault : CRIME_W.civAssault;
+    if (t.hp <= 0) w += t.team === 'police' ? CRIME_W.copKO : CRIME_W.civKO;
+    // aynı hedefe art arda vuruşlar daha az ısı ekler
+    const now = Game.t; if (t._lastCrime && now - t._lastCrime < 1.5 && t.hp > 0) w *= 0.35; t._lastCrime = now;
+    this.commit(w, t.team === 'police' ? 'polise saldırı' : opt.vehicle ? 'yayaya çarpma' : 'sivile saldırı');
+  },
+  weaponSeen() { this.commit(CRIME_W.weapon, 'silah kullanımı', true); },
+  zone(name) { if (S.isRecognizedNinja) return; if (S.heat < HEAT_STARS[1]) this.commit(HEAT_STARS[1] + 2 - S.heat, name, true, true); },
+  commit(amount, why, copOnly = false, force = false) {
     if (S.isRecognizedNinja) return;
-    // Maske + ninja kostümü: tanık polis yoksa yarı etki
     const p = Game.player.pos;
-    const cop = Game.actors.some(a => a.kind === 'police' && a.alive && dist2(a.pos.x, a.pos.z, p.x, p.z) < 50 * 50);
-    if (S.mask && S.outfit === 'ninja' && !cop) amount *= 0.5;
-    const before = Math.floor(S.wanted);
-    S.wanted = clamp(S.wanted + amount, 0, 5); S.stats.crimes++;
-    this.lastSeen = Game.t;
-    if (Math.floor(S.wanted) > before) { UI.toast('🚨 Aranma seviyesi: ' + '★'.repeat(Math.floor(S.wanted)) + ' (' + why + ')'); logEvent('wanted', RADIO.news.wanted); }
+    const cop = force || this.policeWitness(p);
+    if (cop) return this.addHeat(amount, why);
+    if (copOnly) return;
+    const civ = this.civWitness(p);
+    if (!civ) return; // tanık yok → suç fark edilmedi
+    const k = S.mask && S.outfit === 'ninja' ? 0.35 : S.mask ? 0.6 : 1;
+    // sivil ihbarı birkaç saniye sonra gelir (tanık KO olursa ihbar düşer)
+    this.pending.push({ t: Game.t + 3, amount: amount * 0.7 * k, why: why + ' (ihbar)', civ, pos: p.clone() });
   },
-  clear() { S.wanted = 0; for (const a of Game.actors.slice()) if (a.kind === 'police' && a.tag === 'wanted') a.remove(); Vehicles.clearPolice(); },
+  addHeat(amount, why) {
+    const before = S.wanted;
+    S.heat = clamp((S.heat || 0) + amount, 0, 100); S.stats.crimes++;
+    S.wanted = this.starsOf(S.heat);
+    this.lastSeen = Game.t; this.lastPos = Game.player.pos.clone();
+    if (S.wanted > before) { UI.toast('🚨 Aranma: ' + '★'.repeat(S.wanted) + ' (' + why + ')'); logEvent('wanted', RADIO.news.wanted); }
+  },
+  setStars(n) { if (S.isRecognizedNinja) return; S.heat = Math.max(S.heat || 0, HEAT_STARS[n - 1] + 3); S.wanted = this.starsOf(S.heat); this.lastSeen = Game.t; this.lastPos = Game.player.pos.clone(); },
+  clear() { S.heat = 0; S.wanted = 0; this.pending = []; this.lastPos = null; for (const a of Game.actors.slice()) if (a.kind === 'police' && a.tag === 'wanted') a.remove(); Vehicles.clearPolice(); },
   update(dt) {
-    if (S.isRecognizedNinja && S.wanted > 0) this.clear();
-    if (S.wanted <= 0) return;
+    if (S.isRecognizedNinja) { if (S.heat > 0 || S.wanted > 0) this.clear(); return; }
+    // bekleyen ihbarlar
+    for (let i = this.pending.length - 1; i >= 0; i--) { const r = this.pending[i]; if (Game.t >= r.t) { this.pending.splice(i, 1); if (r.civ.alive) this.addHeat(r.amount, r.why); } }
+    if ((S.heat || 0) <= 0) { S.wanted = 0; return; }
     const p = Game.player.pos;
-    // polis görüş kontrolü
-    const seen = Game.actors.some(a => a.kind === 'police' && a.alive && dist2(a.pos.x, a.pos.z, p.x, p.z) < 35 * 35 && World.lineClear(a.pos.x, a.pos.z, p.x, p.z, a.pos.y + 1.5));
-    if (seen) this.lastSeen = Game.t;
-    const hideTime = S.mask ? 9 : 14;
-    if (Game.t - this.lastSeen > hideTime) { this.decayT += dt; if (this.decayT > 6) { this.decayT = 0; S.wanted = Math.max(0, Math.floor(S.wanted - 0.01)); if (S.wanted <= 0) { this.clear(); UI.toast('✅ Polis izini kaybetti'); } } }
-    // polis takviyesi
-    const want = Math.min(10, Math.ceil(S.wanted) * 2);
+    this.seen = !!this.policeWitness(p, 38);
+    if (this.seen) { this.lastSeen = Game.t; this.lastPos = p.clone(); }
+    // soğuma: görüşten çıkınca kademeli; arama yarıçapı dışında daha hızlı
+    const since = Game.t - this.lastSeen, R = this.searchRadius();
+    const outside = !this.lastPos || dist2(p.x, p.z, this.lastPos.x, this.lastPos.z) > R * R;
+    const hideK = (S.mask ? 1.35 : 1) * (S.outfit === 'ninja' && S.mask ? 1.15 : 1);
+    if (!this.seen && since > (outside ? 3 : 7)) S.heat = Math.max(0, S.heat - dt * (outside ? 7 : 2.2) * hideK);
+    const before = S.wanted; S.wanted = this.starsOf(S.heat);
+    if (S.wanted < before) UI.toast(S.wanted ? 'Aranma düştü: ' + '★'.repeat(S.wanted) : '✅ Polis izini kaybetti');
+    if (S.heat <= 0) { this.clear(); return; }
+    if (S.wanted <= 0) return;
+    // polis takviyesi arama bölgesine
+    const want = Math.min(10, S.wanted * 2);
     const have = Game.actors.filter(a => a.kind === 'police' && a.alive && a.tag === 'wanted').length;
-    if (have < want && Math.random() < dt * 0.8) {
-      const ang = rand(0, Math.PI * 2), r = rand(35, 55);
-      const x = p.x + Math.cos(ang) * r, z = p.z + Math.sin(ang) * r;
-      if (World.landAt(x, z) && !World.isMountain(x, z)) Enemies.spawn('police', x, z, undefined, { tag: 'wanted' });
+    if (have < want && Math.random() < dt * 0.7) {
+      const c = this.lastPos || p, ang = rand(0, Math.PI * 2), r = rand(30, 50);
+      const x = c.x + Math.cos(ang) * r, z = c.z + Math.sin(ang) * r;
+      if (World.landAt(x, z) && !World.isMountain(x, z) && dist2(x, z, p.x, p.z) > 25 * 25) { const cop = Enemies.spawn('police', x, z, undefined, { tag: 'wanted' }); cop.ai.search = true; }
     }
     if (S.wanted >= 2) Vehicles.policeChase(dt);
     if (Math.random() < dt * 2) Sound.siren();
-    // Ada: yasaklı bölge
   }
 };
 
@@ -771,7 +854,7 @@ const Dragon = {
     Player.energy -= dt * 3.2; if (Player.energy <= 0) { Player.energy = 0; this.dismount(); UI.toast('Enerji bitti — ejderha dağıldı'); return; }
     const mx = ctl ? Input.move.x : 0, my = ctl ? Input.move.y : 0;
     d.yaw = angLerp(d.yaw, Cam.yaw + Math.PI, dt * 2.5) - mx * dt * 1.6;
-    const up = (ctl && Input.isDown('jump') ? 1 : 0) - (ctl && (Input.isDown('sprint') || Input.isDown('descend')) ? 1 : 0);
+    const up = (ctl && Input.isDown('jump') ? 1 : 0) - (ctl && (Input.isDown('sprint') || Input.isDown('descend') || Input.isDown('dash')) ? 1 : 0);
     d.pitch = lerp(d.pitch, up * 0.7, dt * 3);
     const sp = d.speed * (0.45 + Math.max(0, my) * 0.9) + (my < 0 ? -6 : 0);
     const f = _v1.set(Math.sin(d.yaw) * Math.cos(d.pitch), Math.sin(d.pitch), Math.cos(d.yaw) * Math.cos(d.pitch));

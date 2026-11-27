@@ -8,6 +8,14 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+const NG_VERSION = window.NG_BUILD || '0.0.0';
 
 // ---------------------------------------------------------------- Yardımcılar
 const $ = (id) => document.getElementById(id);
@@ -34,11 +42,14 @@ const Bus = {
 };
 
 // ---------------------------------------------------------------- Ayarlar
-const SETTINGS_KEY = 'ng_settings_v1';
+const SETTINGS_KEY = 'ng_settings_v2';
 const Settings = Object.assign({
   quality: IS_MOBILE ? 'low' : 'high',   // low | medium | high
   viewDist: IS_MOBILE ? 260 : 420,
-  shadows: !IS_MOBILE,
+  shadows: true,
+  bloom: !IS_MOBILE,
+  modelMode: 'library',   // library (internetten hazır GLB) | block (blok figür)
+  updateUrl: '',          // boşsa varsayılan GitHub kaynağı
   invertY: false,
   sens: 1.0,
   timeScale: 60,           // 1 gerçek saniye = 60 oyun saniyesi (1 oyun saati = 60 sn)
@@ -79,6 +90,7 @@ function freshState() {
     weather: 'clear',
     pos: null,                  // [x,y,z]
     eventLog: [],               // radyo bültenleri için
+    heat: 0,                    // aranma ısısı 0..100 → yıldızlar
     stats: { kos: 0, crimes: 0, races: 0, distance: 0 },
     ending: null
   };
