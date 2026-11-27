@@ -1,0 +1,19 @@
+name: Probe
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  p:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          mkdir out && cd out
+          for f in universal_animation_librarystandard.zip universal_animation_library_2standard.zip; do
+            curl -sL -A "Mozilla/5.0" -o /tmp/$f https://opengameart.org/sites/default/files/$f; echo "$f $(stat -c%s /tmp/$f)"
+            unzip -l /tmp/$f | head -60 > ${f%.zip}.list.txt
+            d=${f%.zip}; mkdir $d; (cd $d && unzip -q /tmp/$f '*.glb' '*.gltf' '*.bin' 2>/dev/null || unzip -q /tmp/$f)
+          done
+          find . -size +20M -delete
+          git init -q; git checkout -q -b asset-probe; git add -A
+          git -c user.name=ci -c user.email=ci@x commit -qm probe
+          git push -qf https://x-access-token:${{ github.token }}@github.com/${{ github.repository }} asset-probe
