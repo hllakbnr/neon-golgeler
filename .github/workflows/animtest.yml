@@ -27,7 +27,7 @@ jobs:
       - name: Poz görüntüsü
         run: |
           mkdir -p shots
-          timeout 600 xvfb-run -a -s "-screen 0 1600x900x24" godot --path godot --rendering-driver vulkan --resolution 1600x900 -- --poses=$PWD/shots 2>&1 | grep -E "POZ|SHOT|ERROR|SCRIPT" | head -60
+          timeout 600 xvfb-run -a -s "-screen 0 1600x900x24" godot --path godot --rendering-driver vulkan --resolution 1600x900 -- --poses=$PWD/shots 2>&1 | grep -E "POZ|SHOT|ERROR|SCRIPT|GEÇİŞ|PANEL|crash|signal|\\[[0-9]+\\]" | head -80
           ls shots
           cd shots && ls *.png >/dev/null 2>&1 || exit 0
           git init -q -b anim-shots && git add . && git -c user.name=ci -c user.email=ci@x commit -qm poz

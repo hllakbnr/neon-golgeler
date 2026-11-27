@@ -306,6 +306,29 @@ func _pose_test() -> void:
 		await get_tree().process_frame
 	print("GEÇİŞ tamam mod=", pv.mode)
 	await Game.shot("poz_gecis")
+	# yönetici paneli: oyun duraklatılmışken, alt görüntü alanında aynı sıra
+	get_tree().paused = true
+	var ap := AdminPanel.new()
+	add_child(ap)
+	for k in range(10):
+		await get_tree().process_frame
+	ap.list.select(3)
+	ap._select("yaya1")
+	for k in range(15):
+		await get_tree().process_frame
+	ap.preview.play_once("punch_cross", 0.1)
+	for k in range(10):
+		await get_tree().process_frame
+	print("PANEL geçiş başlıyor")
+	Game.admin.slots.erase("yaya1")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://test_minifig.glb"))
+	_make_test_minifig("user://test_minifig.glb")
+	ap.list.select(4)
+	ap._select("yaya2")
+	for k in range(20):
+		await get_tree().process_frame
+	print("PANEL geçiş tamam mod=", ap.preview.mode)
+	await Game.shot("poz_panel")
 
 
 func _make_test_minifig(path: String) -> bool:
