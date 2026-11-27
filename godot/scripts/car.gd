@@ -74,7 +74,7 @@ func set_driver(on: bool) -> void:
 
 
 func _physics_process(delta: float) -> void:
-	var lights_on: bool = RenderingServer.global_shader_parameter_get("night") > 0.4 and (driven or linear_velocity.length() > 0.5)
+	var lights_on: bool = Game.night > 0.4 and (driven or linear_velocity.length() > 0.5)
 	for l in head_lights:
 		l.visible = lights_on
 	if not driven:

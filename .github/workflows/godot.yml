@@ -32,7 +32,7 @@ jobs:
         run: |
           fail=0
           for f in scripts/*.gd; do
-            out=$(timeout 60 godot --headless --check-only --script "res://$f" 2>&1 | grep -iE "SCRIPT ERROR|Parse Error|error" | grep -v "Can't open" || true)
+            out=$(timeout 60 godot --headless --check-only --script "res://$f" 2>&1 | grep -iE "SCRIPT ERROR|Parse Error|error" | grep -vE "Can't open|Identifier not found: Game|Failed to load script" || true)
             if [ -n "$out" ]; then echo "== $f"; echo "$out"; fail=1; fi
           done
           echo "betik_hata=$fail"
@@ -48,9 +48,13 @@ jobs:
           mkdir -p shots
           timeout 1500 xvfb-run -a -s "-screen 0 1600x900x24" godot --path godot --rendering-driver vulkan --resolution 1600x900 -- --shots=$PWD/shots 2>&1 | grep -vE "^\s*$" | tail -80 || true
           ls -la shots || true
-      - uses: actions/upload-artifact@v4
+      - name: Ekran görüntülerini ci-shots dalına gönder
         if: always()
-        with: { name: godot-shots, path: shots }
+        run: |
+          cd shots && ls *.png >/dev/null 2>&1 || exit 0
+          for f in *.png; do convert "$f" -quality 85 "${f%.png}.jpg" 2>/dev/null && rm "$f" || true; done
+          git init -q -b ci-shots && git add . && git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm "Ekran görüntüleri #${{ github.run_number }}"
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" ci-shots
       - uses: actions/upload-artifact@v4
         with: { name: NeonGolgeler-Godot-Windows, path: godot/build/NeonGolgeler.exe }
       - uses: softprops/action-gh-release@v2

@@ -116,6 +116,7 @@ func update_time(h: float, force := false) -> void:
 	var day: float = clamp(elev * 3.0 + 0.15, 0.0, 1.0)
 	night = 1.0 - clamp(elev * 4.0 + 0.35, 0.0, 1.0)
 	RenderingServer.global_shader_parameter_set("night", night)
+	Game.night = night
 	var sun_dir := Vector3(cos(ang), max(elev, -0.3), 0.35).normalized()
 	sun.look_at_from_position(sun_dir * 100.0, Vector3.ZERO, Vector3.UP)
 	var golden: float = clamp(1.0 - abs(elev) * 3.0, 0.0, 1.0)

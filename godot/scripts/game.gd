@@ -24,6 +24,7 @@ var day := 1
 var paused := false
 var shots_dir := ""        # CI ekran görüntüsü modu
 var keyart: Array = []     # yükleme ekranı görselleri
+var night := 0.0           # 0 gündüz · 1 gece (World günceller)
 var font_display: Font
 var font_ui: Font
 var _mat_cache := {}
@@ -34,6 +35,8 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shots="):
 			shots_dir = a.substr(8)
+	if not RenderingServer.global_shader_parameter_get_list().has(&"night"):
+		RenderingServer.global_shader_parameter_add(&"night", RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.0)
 	_load_manifest()
 	_load_settings()
 	_setup_input()
