@@ -288,6 +288,24 @@ func _pose_test() -> void:
 	for k in range(3):
 		await get_tree().process_frame
 	await Game.shot("poz_minifig")
+	# yönetici önizlemesindeki sıra: iskeletli model oynarken tek parça modele geçiş (CI'da çökme vardı)
+	var pv := CharacterVisual.new()
+	root.add_child(pv)
+	pv.position = Vector3(0, 0, 4)
+	pv.setup("yaya1", "texture-a.png")
+	pv.play("walk")
+	for k in range(10):
+		await get_tree().process_frame
+	pv.play_once("punch_cross", 0.1)
+	for k in range(10):
+		await get_tree().process_frame
+	print("GEÇİŞ başlıyor")
+	pv.setup("yaya2", "texture-b.png")
+	pv.play("walk")
+	for k in range(20):
+		await get_tree().process_frame
+	print("GEÇİŞ tamam mod=", pv.mode)
+	await Game.shot("poz_gecis")
 
 
 func _make_test_minifig(path: String) -> bool:
