@@ -217,6 +217,7 @@ func _resume() -> void:
 # ---------------------------------------------------------------- CI ekran görüntüleri
 func _pose_test() -> void:
 	## hızlı animasyon denetimi: her animasyon belirli bir anda dondurulup tek karede gösterilir
+	await get_tree().process_frame
 	var root := Node3D.new()
 	add_child(root)
 	var env := Environment.new()
@@ -240,7 +241,7 @@ func _pose_test() -> void:
 	var cam := Camera3D.new()
 	cam.fov = 40
 	root.add_child(cam)
-	cam.look_at_from_position(Vector3(0, 4.2, 15.5), Vector3(0, 0.9, 0), Vector3.UP)
+	cam.look_at_from_position(Vector3(0, 9.0, 27.0), Vector3(0, 0.6, -2.0), Vector3.UP)
 	cam.make_current()
 	var mf := "user://test_minifig.glb"
 	_make_test_minifig(mf)
@@ -279,7 +280,7 @@ func _pose_test() -> void:
 	for k in range(6):
 		await get_tree().process_frame
 	await Game.shot("poz_" + str(Game.version))
-	cam.look_at_from_position(Vector3(-6, 1.6, 5.5), Vector3(-6, 1.0, 0), Vector3.UP)
+	cam.look_at_from_position(Vector3(-7.5, 1.7, 6.0), Vector3(-7.5, 1.0, 0), Vector3.UP)
 	for k in range(3):
 		await get_tree().process_frame
 	await Game.shot("poz_yakin")

@@ -120,6 +120,11 @@ static func _prepare(tree: SceneTree) -> bool:
 	_holder.name = "AnimLibKaynak"
 	_holder.visible = false
 	tree.root.add_child(_holder)
+	if not _holder.is_inside_tree():
+		# kök düğüm o an çocuklarını kuruyorsa ekleme başarısız olur; sonraki çağrıda yeniden denenir
+		_holder.free()
+		_holder = null
+		return false
 	for id in [1, 2]:
 		var path := "res://assets/anim/ual%d.glb" % id
 		if not ResourceLoader.exists(path):
