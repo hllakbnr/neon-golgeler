@@ -26,6 +26,7 @@ jobs:
           python3 godot/tools/fetch_assets.py
       - name: Türkçe diyalog seslendirme (Piper TTS)
         run: |
+          sudo apt-get update -qq > /dev/null || true
           sudo apt-get install -y -qq ffmpeg > /dev/null || true
           pip install -q piper-tts || true
           python3 godot/tools/make_voices.py || true
@@ -66,6 +67,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: NeonGolgeler-Godot-Windows, path: godot/build/NeonGolgeler.exe }
       - uses: softprops/action-gh-release@v2
+        if: ${{ hashFiles('shots/15_duraklat.png') != '' }}
         with:
           tag_name: godot-deneme-${{ github.run_number }}
           name: Godot deneme ${{ github.run_number }}

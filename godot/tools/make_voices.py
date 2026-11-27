@@ -68,8 +68,17 @@ def main():
             if abs(pitch - 1.0) > 0.01:
                 af = 'asetrate=22050*%.3f,aresample=22050,atempo=%.3f,%s' % (pitch, 1.0 / pitch, af)
             out = os.path.join(OUT, l['id'] + '.ogg')
-            r = subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', wav, '-af', af, '-c:a', 'libvorbis', '-q:a', '5', out])
-            if r.returncode == 0:
+            try:
+                r = subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', wav, '-af', af, '-c:a', 'libvorbis', '-q:a', '5', out])
+                ok = r.returncode == 0
+            except FileNotFoundError:
+                ok = False
+            if not ok:
+                # ffmpeg yoksa ham wav (perde değişmeden) kullanılır
+                import shutil
+                shutil.copy(wav, out[:-4] + '.wav')
+                ok = True
+            if ok:
                 n += 1
                 print('  ✓', l['id'], who)
     print('Seslendirilen satır:', n)

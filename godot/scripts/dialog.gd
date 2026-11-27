@@ -85,6 +85,8 @@ func _next() -> void:
 	panel.visible = Game.settings.get("subtitles", true)
 	var dur := 1.6 + text_l.text.length() * 0.055
 	var path := "res://assets/voice/%s.ogg" % l.get("id", "")
+	if not ResourceLoader.exists(path):
+		path = path.get_basename() + ".wav"
 	if l.get("id", "") != "" and ResourceLoader.exists(path):
 		var st: AudioStream = load(path)
 		player.stream = st

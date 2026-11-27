@@ -577,7 +577,8 @@ func _hologram(base: Vector3, fp: Vector3, h: float) -> void:
 	q.set_instance_shader_parameter("col_b", b)
 	q.set_instance_shader_parameter("kind", float(rng.randi_range(0, 2)))
 	add_child(q)
-	var txt := ["NEON GÖLGELER", "ANANAS SMOOTHIE", "TEKNO 3000", "GECE PAZARI", "HIZ KULÜBÜ"][rng.randi_range(0, 4)]
+	var ads: Array[String] = ["NEON GÖLGELER", "ANANAS SMOOTHIE", "TEKNO 3000", "GECE PAZARI", "HIZ KULÜBÜ"]
+	var txt: String = ads[rng.randi_range(0, 4)]
 	_label(txt, q.position + Vector3(0, -hh * 0.5 - 1.2, 0) + off.normalized() * 0.1, q.rotation.y, a, 96, 0.03)
 
 
@@ -645,8 +646,8 @@ func _shopfront(base: Vector3, fp: Vector3, d: String, floors: int) -> void:
 		var panel := _box(p + Vector3(0, -hh * 0.5 + 1.0, 0), Vector3(0.25, hh, 1.3) if along_x else Vector3(1.3, hh, 0.25), Game.paint(Color(0.06, 0.06, 0.08), 0.3, 0.4), false)
 		panel.rotation.y = 0.0
 		for k in range(n):
-			for s2 in [-1, 1]:
-				var lp := p + Vector3(0, -k * 1.05 + 0.6, 0) + right * (0.15 * s2)
+			for s2: int in [-1, 1]:
+				var lp: Vector3 = p + Vector3(0, -k * 1.05 + 0.6, 0) + right * (0.15 * s2)
 				_label(txt[k], lp, yaw + PI * 0.5 * s2, col, 110, 0.009)
 		_neon(p + Vector3(0, 1.32, 0), Vector3(0.3, 0.08, 1.4) if along_x else Vector3(1.4, 0.08, 0.3), col, Vector3.ZERO, 170.0)
 		_neon(p + Vector3(0, -hh + 0.68, 0), Vector3(0.3, 0.08, 1.4) if along_x else Vector3(1.4, 0.08, 0.3), col, Vector3.ZERO, 170.0)
