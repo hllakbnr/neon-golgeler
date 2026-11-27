@@ -241,7 +241,13 @@ static func _bake_blocky_anim(s: Dictionary, an: String, length: float, paths: D
 	for f in range(n + 1):
 		var time := minf(f / FPS, a.length)
 		var p := _pose(s, an, time)
-		var torso_q: Quaternion = (p.chest.basis * rest.chest.basis.inverse()).get_rotation_quaternion()
+		# gövde: omurga çizgisinin yönü (kalça→boyun) + göğsün yatay dönüşü; katı blokta abartmasın diye yumuşatılır
+		var top_k: String = "neck" if p.has("neck") and rest.has("neck") else "chest"
+		var spine_rest: Vector3 = rest[top_k].origin - rest.hips.origin
+		var spine_cur: Vector3 = p[top_k].origin - p.hips.origin
+		var chest_d: Quaternion = (p.chest.basis * rest.chest.basis.inverse()).get_rotation_quaternion()
+		var swing := Quaternion.IDENTITY.slerp(_arc(spine_rest, spine_cur), 0.85)
+		var torso_q: Quaternion = swing * Quaternion(Vector3.UP, chest_d.get_euler().y * 0.8)
 		a.rotation_track_insert_key(tr.torso, time, torso_q)
 		if p.has("head") and rest.has("head"):
 			var hq: Quaternion = (p.head.basis * rest.head.basis.inverse()).get_rotation_quaternion()

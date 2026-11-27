@@ -1,5 +1,6 @@
 name: Animasyon tanı testi
 on: workflow_dispatch
+permissions: { contents: write }
 jobs:
   t:
     runs-on: ubuntu-latest
@@ -11,14 +12,23 @@ jobs:
           wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
           unzip -q Godot_v4.3-stable_linux.x86_64.zip
           sudo mv Godot_v4.3-stable_linux.x86_64 /usr/local/bin/godot
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb mesa-vulkan-drivers libvulkan1 > /dev/null
       - name: Varlıklar (yalnızca karakter + animasyon)
         run: |
           pip install -q pillow || true
-          python3 godot/tools/fetch_assets.py kenney anim chars > /tmp/fa.txt 2>&1 || true
-          tail -5 /tmp/fa.txt
+          python3 godot/tools/fetch_assets.py kenney anim chars fonts > /tmp/fa.txt 2>&1 || true
+          tail -3 /tmp/fa.txt
       - name: İçe aktar
         working-directory: godot
         run: timeout 600 godot --headless --import 2>&1 | grep -iE "error" | head -20 || true
-      - name: Test
+      - name: Veri testi
         working-directory: godot
-        run: timeout 300 godot --headless -s res://tools/anim_test.gd 2>&1 | grep -vE "^\s*$" | head -300
+        run: timeout 300 godot --headless -s res://tools/anim_test.gd 2>&1 | grep -vE "^\s*$" | grep -E "BULUNAMAYAN|eşlenen|bitti|ERROR" | head -40
+      - name: Poz görüntüsü
+        run: |
+          mkdir -p shots
+          timeout 600 xvfb-run -a -s "-screen 0 1600x900x24" godot --path godot --rendering-driver vulkan --resolution 1600x900 -- --poses=$PWD/shots 2>&1 | grep -E "POZ|SHOT|ERROR|SCRIPT" | head -60
+          ls shots
+          cd shots && ls *.png >/dev/null 2>&1 || exit 0
+          git init -q -b anim-shots && git add . && git -c user.name=ci -c user.email=ci@x commit -qm poz
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" anim-shots

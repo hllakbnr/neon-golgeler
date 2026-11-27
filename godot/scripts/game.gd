@@ -41,6 +41,7 @@ var time_of_day := 17.5    # saat (0..24)
 var day := 1
 var paused := false
 var shots_dir := ""        # CI ekran görüntüsü modu
+var pose_test := false     # CI: yalnızca animasyon pozlarını çiz
 var keyart: Array = []     # yükleme ekranı görselleri
 var night := 0.0           # 0 gündüz · 1 gece (World günceller)
 var font_display: Font
@@ -53,6 +54,9 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shots="):
 			shots_dir = a.substr(8)
+		if a.begins_with("--poses="):
+			shots_dir = a.substr(8)
+			pose_test = true
 	if not RenderingServer.global_shader_parameter_get_list().has(&"night"):
 		RenderingServer.global_shader_parameter_add(&"night", RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.0)
 	if FileAccess.file_exists("res://version.txt"):

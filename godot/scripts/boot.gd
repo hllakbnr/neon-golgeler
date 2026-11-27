@@ -13,6 +13,10 @@ var _orbit := 0.0
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	if Game.pose_test:
+		await _pose_test()
+		get_tree().quit()
+		return
 	if Updater.should_run():
 		var up := Updater.new()
 		add_child(up)
@@ -211,6 +215,76 @@ func _resume() -> void:
 
 
 # ---------------------------------------------------------------- CI ekran görüntüleri
+func _pose_test() -> void:
+	## hızlı animasyon denetimi: her animasyon belirli bir anda dondurulup tek karede gösterilir
+	var root := Node3D.new()
+	add_child(root)
+	var env := Environment.new()
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.16, 0.17, 0.22)
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.75, 0.75, 0.8)
+	env.ambient_light_energy = 0.7
+	var we := WorldEnvironment.new()
+	we.environment = env
+	root.add_child(we)
+	var sun := DirectionalLight3D.new()
+	sun.rotation_degrees = Vector3(-50, 30, 0)
+	sun.shadow_enabled = true
+	root.add_child(sun)
+	var floor_mi := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(60, 30)
+	floor_mi.mesh = pm
+	root.add_child(floor_mi)
+	var cam := Camera3D.new()
+	cam.fov = 40
+	root.add_child(cam)
+	cam.look_at_from_position(Vector3(0, 4.2, 15.5), Vector3(0, 0.9, 0), Vector3.UP)
+	cam.make_current()
+	var mf := "user://test_minifig.glb"
+	_make_test_minifig(mf)
+	var tests := [["kaan", "idle", 0.5], ["kaan", "walk", 0.2], ["kaan", "walk", 0.55], ["kaan", "jog", 0.2], ["kaan", "sprint", 0.2], ["kaan", "crouch_idle", 0.5],
+		["kaan", "crouch_walk", 0.3], ["kaan", "punch_cross", 0.18], ["kaan", "sword_a", 0.2], ["kaan", "jump", 0.2], ["kaan", "drive", 0.3], ["kaan", "die", 2.0],
+		["xbot", "idle", 0.5], ["xbot", "walk", 0.2], ["xbot", "jog", 0.2], ["xbot", "punch_cross", 0.18], ["xbot", "crouch_idle", 0.5],
+		["mini", "idle", 0.5], ["mini", "walk", 0.2], ["mini", "jog", 0.2], ["mini", "punch_cross", 0.18], ["mini", "crouch_walk", 0.3]]
+	Game.admin.slots["yaya1"] = {"type": "glb", "path": "res://assets/chars/human.glb"}
+	Game.admin.slots["yaya2"] = {"type": "glb", "path": mf}
+	var per_row := 12
+	for i in tests.size():
+		var t: Array = tests[i]
+		var slot: String = {"kaan": "kaan", "xbot": "yaya1", "mini": "yaya2"}[t[0]]
+		var v := CharacterVisual.new()
+		root.add_child(v)
+		v.setup(slot, Game.slot_default_skin(slot))
+		var row := i / per_row
+		var col := i % per_row
+		v.position = Vector3((col - (per_row - 1) * 0.5) * 2.1, 0, -row * 3.2)
+		v.rotation.y = 0.5
+		v.play(t[1], 0.0)
+		if v.anim:
+			var nm := v._resolve(t[1])
+			if nm != "":
+				v.anim.play(nm, 0.0)
+				v.anim.seek(minf(t[2], v.anim.get_animation(nm).length), true)
+				v.anim.pause()
+		var lbl := Label3D.new()
+		lbl.text = "%s\n%s" % [t[0], t[1]]
+		lbl.font_size = 40
+		lbl.pixel_size = 0.006
+		lbl.position = v.position + Vector3(0, 2.25, 0)
+		lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		root.add_child(lbl)
+		print("POZ ", t[0], " ", t[1], " mod=", v.mode, " çözülen=", v._resolve(t[1]), " not=", v.note)
+	for k in range(6):
+		await get_tree().process_frame
+	await Game.shot("poz_" + str(Game.version))
+	cam.look_at_from_position(Vector3(-6, 1.6, 5.5), Vector3(-6, 1.0, 0), Vector3.UP)
+	for k in range(3):
+		await get_tree().process_frame
+	await Game.shot("poz_yakin")
+
+
 func _make_test_minifig(path: String) -> bool:
 	## tek yüzeyli, iskeletsiz, oyuncak figür benzeri test modeli üretip glb olarak yazar
 	var st := SurfaceTool.new()
