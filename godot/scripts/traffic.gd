@@ -133,8 +133,27 @@ func _lane_offset(a: Vector2i, b: Vector2i) -> Vector3:
 
 func _place() -> void:
 	var p := _node_pos(from) + _lane_offset(from, to)
-	global_position = p
 	var tgt := _node_pos(to) + _lane_offset(from, to)
+	# şeritte boş bir yer ara: başka aracın içine/üstüne doğma
+	var dir := (tgt - p)
+	dir.y = 0.0
+	var seg := dir.length()
+	if seg > 1.0:
+		dir /= seg
+		var others := get_tree().get_nodes_in_group("traffic") + get_tree().get_nodes_in_group("cars")
+		var k := 8.0
+		while k < seg - 8.0:
+			var c := p + dir * k
+			var free := true
+			for n in others:
+				if n != self and is_instance_valid(n) and (n as Node3D).is_inside_tree() and (n as Node3D).global_position.distance_to(c) < 6.0:
+					free = false
+					break
+			if free:
+				p = c
+				break
+			k += 7.0
+	global_position = p
 	if from != to and tgt.distance_to(p) > 0.1:
 		look_at(tgt, Vector3.UP, true)
 
@@ -289,7 +308,7 @@ func _physics_process(delta: float) -> void:
 	# kavşak sırası: kavşakta başka araç varsa girmeden bekle
 	if dist < stop_line + 7.0 and dist > 3.0:
 		var occ: Variant = _res.get(to)
-		if occ != null and is_instance_valid(occ) and occ != self and (occ as Node3D).global_position.distance_to(_node_pos(to)) < stop_line + 4.0:
+		if occ != null and is_instance_valid(occ) and occ != self and (occ as Node3D).global_position.distance_to(_node_pos(to)) < minf(stop_line + 4.0, dist):
 			if dist > stop_line - 1.0:
 				want = 0.0 if dist < stop_line + 1.5 else minf(want, 3.0)
 		elif dist < stop_line + 1.0 or green or pursuit:
