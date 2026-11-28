@@ -164,8 +164,9 @@ func _maintain() -> void:
 		var o := n as Pedestrian
 		if o and not o.is_down() and o.global_position.distance_to(pp) < 70.0:
 			near += 1
-	var want := mini(1 + stars * 2, 11)
-	var add := mini(want - near, 2)
+	# önce devriye arabaları gelir; yaya polis yalnızca 2+ yıldızda ve görüş dışından katılır
+	var want := mini(stars * 2 - 1, 9) if stars >= 2 else 0
+	var add := mini(want - near, 1)
 	for k in add:
 		_spawn_officer(pp)
 	# devriye arabaları
@@ -175,23 +176,37 @@ func _maintain() -> void:
 			cars.remove_at(i)
 		else:
 			i += 1
-	if stars >= 2 and world and world.in_city(pp) and cars.size() < mini(stars - 1, 4):
+	if world and world.in_city(pp) and cars.size() < mini(stars, 4):
 		_spawn_car(pp)
 
 
 func _spawn_officer(pp: Vector3) -> void:
 	if world == null:
 		return
-	var pos := pp
-	var axis := Vector3.ZERO
+	# görüş alanının dışında, 70–95 m uzakta, aynı cadde üzerinde belirir ve koşarak gelir
+	var cam := get_viewport().get_camera_3d()
+	var cf := -cam.global_transform.basis.z if cam else Vector3.FORWARD
+	var cands := []
 	if world.in_city(pp):
 		var dx := absf(pp.x - roundf(pp.x / world.CELL) * world.CELL)
 		var dz := absf(pp.z - roundf(pp.z / world.CELL) * world.CELL)
-		axis = Vector3(0, 0, 1) if dx < dz else Vector3(1, 0, 0)
-		pos = pp + axis * (32.0 + randf() * 14.0) * (1.0 if randf() < 0.5 else -1.0)
+		var axis := Vector3(0, 0, 1) if dx < dz else Vector3(1, 0, 0)
+		for sgn in [1.0, -1.0]:
+			cands.append(pp + axis * (70.0 + randf() * 25.0) * sgn)
 	else:
-		var a := randf() * TAU
-		pos = pp + Vector3(cos(a), 0, sin(a)) * 34.0
+		for k in 6:
+			var a := randf() * TAU
+			cands.append(pp + Vector3(cos(a), 0, sin(a)) * 80.0)
+	var pos := Vector3.INF
+	for c in cands:
+		var cv: Vector3 = c
+		var to := cv - (cam.global_position if cam else pp)
+		to.y = 0.0
+		if cf.dot(to.normalized()) < 0.25 and world.walk_ok(cv):
+			pos = cv
+			break
+	if pos == Vector3.INF:
+		return
 	pos.y = world.city_floor(pos)
 	var r := world.blocks[0]
 	var bd := 1e9
@@ -217,8 +232,15 @@ func _spawn_car(pp: Vector3) -> void:
 	var nodes := []
 	for x in range(-World.GX, World.GX + 1):
 		for z in range(-World.GZ, World.GZ + 1):
-			var d := Vector3(x * World.CELL, 0, z * World.CELL).distance_to(pp)
+			var np := Vector3(x * World.CELL, 0, z * World.CELL)
+			var d := np.distance_to(pp)
 			if d > 110.0 and d < 230.0:
+				var cam := get_viewport().get_camera_3d()
+				if cam:
+					var to := np - cam.global_position
+					to.y = 0.0
+					if (-cam.global_transform.basis.z).dot(to.normalized()) > 0.35:
+						continue
 				nodes.append(Vector2i(x, z))
 	if nodes.is_empty():
 		return

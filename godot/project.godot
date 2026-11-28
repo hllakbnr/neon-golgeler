@@ -12,6 +12,7 @@ boot_splash/show_image=false
 
 [autoload]
 
+Patcher="*res://scripts/patcher.gd"
 Game="*res://scripts/game.gd"
 
 [display]

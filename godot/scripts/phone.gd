@@ -50,6 +50,11 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_t += delta
+	if Game.paused and not _closing:
+		_closing = true
+		_anim = 0.0
+		if player:
+			player.phone = null
 	_anim = move_toward(_anim, 0.0 if _closing else 1.0, delta * 5.0)
 	_info_t -= delta
 	if _closing and _anim <= 0.0:
@@ -70,6 +75,9 @@ func close() -> void:
 
 func _unhandled_input(e: InputEvent) -> void:
 	if _closing or not e.is_pressed() or e.is_echo():
+		return
+	if e is InputEventKey and (e as InputEventKey).keycode == KEY_ESCAPE:
+		close()
 		return
 	var handled := true
 	if e.is_action_pressed("phone"):

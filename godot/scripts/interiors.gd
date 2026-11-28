@@ -212,8 +212,9 @@ func _build(kind: String) -> void:
 	_box(root, body, Vector3(-W * 0.5, H * 0.5, 0), Vector3(0.3, H, D), wl)
 	_box(root, body, Vector3(W * 0.5, H * 0.5, 0), Vector3(0.3, H, D), wl)
 	_box(root, body, Vector3(0, H * 0.5, D * 0.5), Vector3(W, H, 0.3), wl)
-	_box(root, body, Vector3(-W * 0.3 - 0.9, H * 0.5, -D * 0.5), Vector3(W * 0.4 + 0.2, H, 0.3), wl)
-	_box(root, body, Vector3(W * 0.3 + 0.9, H * 0.5, -D * 0.5), Vector3(W * 0.4 + 0.2, H, 0.3), wl)
+	var sw := W * 0.5 - 0.9
+	_box(root, body, Vector3(-(0.9 + sw * 0.5), H * 0.5, -D * 0.5), Vector3(sw + 0.02, H, 0.3), wl)
+	_box(root, body, Vector3(0.9 + sw * 0.5, H * 0.5, -D * 0.5), Vector3(sw + 0.02, H, 0.3), wl)
 	_box(root, body, Vector3(0, H * 0.5 + 1.3, -D * 0.5), Vector3(1.8, H - 2.6, 0.3), wl)
 	# kapı (cam, ışıklı çerçeve)
 	_box(root, null, Vector3(0, 1.3, -D * 0.5 - 0.02), Vector3(1.8, 2.6, 0.05), Game.emissive(Color(0.5, 0.7, 0.9), 0.6))
@@ -247,6 +248,7 @@ func _build(kind: String) -> void:
 	keeper.setup(String(st.keeper), Game.slot_default_skin(String(st.keeper)))
 	keeper.position = Vector3(0, 0, cz + 1.3)
 	keeper.rotation.y = PI
+	_decor(root, body, W, D, H, st, kind, cz)
 	match kind:
 		"restoran":
 			_restaurant(root, body, W, D, tr)
@@ -590,3 +592,93 @@ func _temple(root: Node3D, body: StaticBody3D, W: float, D: float, H: float) -> 
 		mi.material_override = Game.paint(Color(0.85, 0.65, 0.2), 0.0, 0.8)
 		mi.position = Vector3(-3.0 + (k % 3) * 3.0, 0.06, -2.0 + (k / 3) * 3.0)
 		root.add_child(mi)
+
+
+
+func _decor(root: Node3D, body: StaticBody3D, W: float, D: float, H: float, st: Dictionary, kind: String, cz: float) -> void:
+	## her mekâna ortak süsleme: saksı bitkileri, duvar tabloları, raflar, kasa, menü panosu, halı, saat, hoparlör
+	var rng := RandomNumberGenerator.new()
+	rng.seed = kind.hash()
+	var neon: Color = st.neon
+	var pot := Game.paint(Color(0.55, 0.32, 0.2), 0.0, 0.8)
+	var leaf := Game.paint(Color(0.18, 0.5, 0.22), 0.0, 0.7)
+	# köşelerde saksı bitkileri
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			if kind == "dojo" and sz > 0:
+				continue
+			var p := Vector3(sx * (W * 0.5 - 0.8), 0, sz * (D * 0.5 - 0.8))
+			if sz < 0 and absf(p.x) < 2.0:
+				continue
+			_box(root, body, p + Vector3(0, 0.3, 0), Vector3(0.55, 0.6, 0.55), pot)
+			for k in 5:
+				var lf := MeshInstance3D.new()
+				var sp := SphereMesh.new()
+				sp.radius = 0.28
+				sp.height = 0.9
+				lf.mesh = sp
+				lf.material_override = leaf
+				lf.position = p + Vector3(rng.randf_range(-0.2, 0.2), 0.95 + k * 0.12, rng.randf_range(-0.2, 0.2))
+				lf.rotation = Vector3(rng.randf_range(-0.5, 0.5), rng.randf() * TAU, rng.randf_range(-0.5, 0.5))
+				root.add_child(lf)
+	# yan duvarlarda çerçeveli tablolar / afişler
+	var art := [Color(0.9, 0.3, 0.4), Color(0.2, 0.6, 0.9), Color(1.0, 0.75, 0.2), Color(0.4, 0.85, 0.5), neon]
+	for sx in [-1.0, 1.0]:
+		for k in 3:
+			var z := -D * 0.3 + k * D * 0.25
+			var fp := Vector3(sx * (W * 0.5 - 0.17), 2.1, z)
+			_box(root, null, fp, Vector3(0.05, 1.1, 0.9), Game.paint(Color(0.12, 0.1, 0.08), 0.2, 0.6))
+			var a: Color = art[(k + (1 if sx > 0 else 0)) % art.size()]
+			_box(root, null, fp + Vector3(-sx * 0.03, 0, 0), Vector3(0.03, 0.95, 0.75), Game.paint(a, 0.0, 0.5))
+			_box(root, null, fp + Vector3(-sx * 0.04, rng.randf_range(-0.2, 0.2), rng.randf_range(-0.2, 0.2)), Vector3(0.02, 0.3, 0.3), Game.paint(a.lightened(0.4), 0.0, 0.5))
+	# arka duvarda raflar ve şişeler / kutular
+	var shelf := Game.paint(Color(0.3, 0.2, 0.12), 0.0, 0.7)
+	for lvl in 3:
+		var y := 1.5 + lvl * 0.55
+		for sx in [-1.0, 1.0]:
+			var sp2 := Vector3(sx * W * 0.28, y, D * 0.5 - 0.35)
+			_box(root, null, sp2, Vector3(2.4, 0.05, 0.35), shelf)
+			for k in 7:
+				var bc := Color.from_hsv(rng.randf(), 0.6, 0.85)
+				var bh := rng.randf_range(0.15, 0.35)
+				_box(root, null, sp2 + Vector3(-1.0 + k * 0.33, 0.03 + bh * 0.5, 0), Vector3(0.12, bh, 0.12), Game.paint(bc, 0.2, 0.3))
+	# kasa ve menü panosu
+	_box(root, null, Vector3(1.6, 1.3, cz), Vector3(0.45, 0.3, 0.35), Game.paint(Color(0.15, 0.15, 0.17), 0.6, 0.3))
+	_box(root, null, Vector3(1.6, 1.5, cz - 0.1), Vector3(0.35, 0.18, 0.02), Game.emissive(Color(0.3, 1.0, 0.6), 1.5))
+	if kind in ["restoran", "smoothie", "kulup"]:
+		var mb := Vector3(-W * 0.28, H - 1.0, D * 0.5 - 0.2)
+		_box(root, null, mb, Vector3(3.0, 1.2, 0.05), Game.paint(Color(0.05, 0.05, 0.06), 0.0, 0.6))
+		for k in 5:
+			_box(root, null, mb + Vector3(-0.6, 0.4 - k * 0.2, -0.04), Vector3(1.4, 0.05, 0.01), Game.emissive(Color(1, 1, 1), 0.9))
+			_box(root, null, mb + Vector3(1.0, 0.4 - k * 0.2, -0.04), Vector3(0.4, 0.05, 0.01), Game.emissive(neon, 1.2))
+	# ortada halı
+	if kind != "dojo" and kind != "kulup":
+		_box(root, null, Vector3(0, 0.012, -D * 0.1), Vector3(W * 0.45, 0.02, D * 0.3), Game.paint(neon.darkened(0.55), 0.0, 0.95))
+		_box(root, null, Vector3(0, 0.016, -D * 0.1), Vector3(W * 0.4, 0.02, D * 0.25), Game.paint(neon.darkened(0.35), 0.0, 0.95))
+	# duvar saati ve hoparlörler
+	var clk := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.35
+	cyl.bottom_radius = 0.35
+	cyl.height = 0.06
+	clk.mesh = cyl
+	clk.material_override = Game.paint(Color(0.95, 0.95, 0.92), 0.0, 0.4)
+	clk.rotation.x = PI * 0.5
+	clk.position = Vector3(W * 0.3, H - 0.8, -D * 0.5 + 0.2)
+	root.add_child(clk)
+	for sx in [-1.0, 1.0]:
+		_box(root, null, Vector3(sx * (W * 0.5 - 0.35), H - 0.6, D * 0.5 - 0.35), Vector3(0.35, 0.5, 0.3), Game.paint(Color(0.08, 0.08, 0.09), 0.3, 0.5))
+	# tavandan sarkan lambalar
+	for k in 4:
+		var lp := Vector3((k % 2 - 0.5) * W * 0.4, H - 0.9, (k / 2 - 0.5) * D * 0.35)
+		_box(root, null, lp + Vector3(0, 0.45, 0), Vector3(0.02, 0.9, 0.02), Game.paint(Color(0.1, 0.1, 0.1), 0.5, 0.5))
+		var sh := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.12
+		cm.bottom_radius = 0.38
+		cm.height = 0.3
+		sh.mesh = cm
+		sh.material_override = Game.paint(neon.darkened(0.3), 0.4, 0.4)
+		sh.position = lp
+		root.add_child(sh)
+		_box(root, null, lp - Vector3(0, 0.16, 0), Vector3(0.2, 0.05, 0.2), Game.emissive(st.light, 3.0))

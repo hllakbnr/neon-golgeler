@@ -104,11 +104,14 @@ jobs:
           git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" ci-shots
       - uses: actions/upload-artifact@v4
         with: { name: NeonGolgeler-Godot-Windows, path: godot/build/NeonGolgeler.exe }
-      - name: Güncelleme bilgisi (version.json)
+      - name: Güncelleme bilgisi + parçalı yama (version.json, base.json, yama.pck)
         if: steps.shots.outputs.ok == '1'
         run: |
-          printf '{"version": %s, "file": "NeonGolgeler.exe", "notes": "Neon Gölgeler sürüm %s"}\n' "${{ github.run_number }}" "${{ github.run_number }}" > godot/build/version.json
-          cat godot/build/version.json
+          cd godot
+          timeout 600 godot --headless --export-pack "Windows Desktop" build/full.pck 2>&1 | tail -3
+          python3 tools/patch_build.py build/full.pck ${{ github.run_number }} build NeonGolgeler.exe
+          rm -f build/full.pck
+          ls -la build
       - uses: softprops/action-gh-release@v2
         if: steps.shots.outputs.ok == '1'
         with:
@@ -129,3 +132,5 @@ jobs:
           files: |
             godot/build/NeonGolgeler.exe
             godot/build/version.json
+            godot/build/base.json
+            godot/build/yama.pck

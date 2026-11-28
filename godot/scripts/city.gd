@@ -626,15 +626,16 @@ func _street_furniture() -> void:
 						var p: Vector3 = lx[1]
 						lamp_n += 1
 						var light: OmniLight3D = null
-						if lamp_n % 2 == 1:
+						if true:
 							light = OmniLight3D.new()
-							light.light_color = Color(1.0, 0.82, 0.58) if d != "eski" else Color(1.0, 0.55, 0.3)
-							light.light_energy = 3.0
-							light.omni_range = 17.0
-							light.omni_attenuation = 1.3
+							light.light_color = Color(1.0, 0.84, 0.62) if d != "eski" else Color(1.0, 0.6, 0.34)
+							light.light_energy = 5.5
+							light.omni_range = 24.0
+							light.omni_attenuation = 0.9
+							light.light_specular = 0.6
 							light.distance_fade_enabled = true
-							light.distance_fade_begin = 60.0
-							light.distance_fade_length = 20.0
+							light.distance_fade_begin = 110.0
+							light.distance_fade_length = 30.0
 							light.position = (lx[0] as Transform3D) * Vector3(1.6, 6.6, 0)
 							light.visible = false
 							w.add_child(light)
@@ -749,21 +750,21 @@ func _lanterns() -> void:
 	sm.height = 0.75
 	sm.radial_segments = 10
 	sm.rings = 6
-	var mr := w._multi(sm, red, w.neon_mat, 220.0)
+	var mr := w._multi(sm, red, w.neon_mat, 0.0)
 	mr.set_instance_shader_parameter("neon_col", Color(1.0, 0.15, 0.08))
 	mr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var mo := w._multi(sm, orange, w.neon_mat, 220.0)
+	var mo := w._multi(sm, orange, w.neon_mat, 0.0)
 	mo.set_instance_shader_parameter("neon_col", Color(1.0, 0.55, 0.12))
 	mo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var wm := BoxMesh.new()
 	wm.size = Vector3(0.03, 0.03, w.ROAD_W + 4.4)
-	w._multi(wm, wires, Game.paint(Color(0.05, 0.05, 0.05), 0.0, 0.8), 220.0)
+	w._multi(wm, wires, Game.paint(Color(0.05, 0.05, 0.05), 0.0, 0.8), 0.0)
 	var pm := CylinderMesh.new()
 	pm.top_radius = 0.08
 	pm.bottom_radius = 0.1
 	pm.height = 7.2
 	pm.radial_segments = 6
-	w._multi(pm, poles, Game.paint(Color(0.3, 0.12, 0.08), 0.0, 0.7), 220.0)
+	w._multi(pm, poles, Game.paint(Color(0.3, 0.12, 0.08), 0.0, 0.7), 0.0)
 
 
 # ---------------------------------------------------------------- monoray

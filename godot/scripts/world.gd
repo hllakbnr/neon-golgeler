@@ -319,7 +319,7 @@ func update_time(h: float, force := false) -> void:
 		sky_mat.set_shader_parameter("ground_col", Vector3(0.2, 0.19, 0.2) * (1.0 - night * 0.8))
 		sky_mat.set_shader_parameter("night_f", night)
 		sky_mat.set_shader_parameter("cloud_t", Time.get_ticks_msec() / 1000.0)
-	env.ambient_light_energy = lerp(0.16, 1.0, day)
+	env.ambient_light_energy = lerp(0.3, 1.0, day)
 	env.background_energy_multiplier = lerp(0.55, 1.0, day)
 	env.tonemap_exposure = lerp(1.3, 1.0, day)
 	env.fog_light_color = hor.lerp(Color(0.12, 0.05, 0.18), night * 0.5)
@@ -738,6 +738,29 @@ func sidewalk_loop(r: Rect2) -> Array:
 	var c := r.get_center()
 	var hwid := r.size.x * 0.5 - 2.6
 	return [Vector3(c.x - hwid, 0.18, c.y - hwid), Vector3(c.x + hwid, 0.18, c.y - hwid), Vector3(c.x + hwid, 0.18, c.y + hwid), Vector3(c.x - hwid, 0.18, c.y + hwid)]
+
+
+func walk_ok(p: Vector3) -> bool:
+	## şehirde bina adalarının içi (kaldırım şeridi hariç) yürünemez
+	if not in_city(p):
+		return true
+	var half := CELL * 0.5 - ROAD_W * 0.5 - WALK + 0.3
+	var cx := (floorf(p.x / CELL) + 0.5) * CELL
+	var cz := (floorf(p.z / CELL) + 0.5) * CELL
+	return not (absf(p.x - cx) < half and absf(p.z - cz) < half)
+
+
+func walk_step(from: Vector3, to: Vector3) -> Vector3:
+	## duvara çarpınca kayarak ilerle
+	if walk_ok(to):
+		return to
+	var a := Vector3(to.x, to.y, from.z)
+	if walk_ok(a):
+		return a
+	var b := Vector3(from.x, to.y, to.z)
+	if walk_ok(b):
+		return b
+	return Vector3(from.x, to.y, from.z)
 
 
 func city_floor(p: Vector3) -> float:

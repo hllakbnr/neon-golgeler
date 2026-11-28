@@ -4,6 +4,7 @@ class_name MainMenu
 
 signal play_pressed
 signal resume_pressed
+signal map_pressed
 
 var pause_mode := false
 var list: VBoxContainer
@@ -80,7 +81,8 @@ func build() -> void:
 		items.append(["Devam Et", "Şehre geri dön.", func(): resume_pressed.emit()])
 	else:
 		items.append(["Hikâye Modu", "Kaan Demir'in hikâyesine başla.", func(): play_pressed.emit()])
-	items.append(["Harita", "Şehir haritası (yakında: görev ve yol noktaları).", func(): pass])
+	if pause_mode:
+		items.append(["Harita", "Tüm harita: yerler, kategoriler, işaret ve GPS rotası.", func(): map_pressed.emit()])
 	items.append(["Fotoğraf Stüdyosu", "Kamerayı serbest bırak, kareyi yakala (yakında).", func(): pass])
 	items.append(["Ayarlar", "Oynanış, görüntü, kamera ve ses ayarları.", func(): settings_ui.visible = true; settings_ui.grab()])
 	items.append(["Yardım", "WASD hareket · Shift koş · Boşluk zıpla · F araç · Fare kamera · T zamanı hızlandır · Esc menü", func(): pass])

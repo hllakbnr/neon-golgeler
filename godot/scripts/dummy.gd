@@ -25,6 +25,15 @@ func _ready() -> void:
 	base.material_override = wood
 	base.position.y = 0.06
 	add_child(base)
+	var sb := StaticBody3D.new()
+	var cs := CollisionShape3D.new()
+	var cap := CylinderShape3D.new()
+	cap.radius = 0.38
+	cap.height = 1.9
+	cs.shape = cap
+	cs.position.y = 0.95
+	sb.add_child(cs)
+	add_child(sb)
 
 
 func _part(p: Vector3, s: Vector3, m: Material) -> void:

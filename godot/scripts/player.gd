@@ -115,6 +115,9 @@ func _physics_process(delta: float) -> void:
 		global_position = mount.seat()
 		velocity = Vector3.ZERO
 		visual.global_rotation = Vector3(0, mount.yaw, 0)
+		if not Input.get_last_mouse_velocity().length() > 1.0:
+			yaw = lerp_angle(yaw, mount.yaw + PI, delta * 2.0)
+			pitch = lerp(pitch, -0.28, delta * 2.0)
 		visual.play("sit", 0.2)
 		visual.lock_t = 0.1
 		var dk: float = clampf(mount.speed / 40.0, 0.0, 1.0)
@@ -354,8 +357,19 @@ func dismount() -> void:
 		return
 	var m := mount
 	mount = null
-	global_position = m.global_position + Vector3(0, -1.0, 0)
-	velocity = m.vel * 0.3
+	var p := m.global_position
+	var g := world.ground_y(p.x, p.z) if world else 0.0
+	if world and world.in_city(p):
+		g = world.city_floor(p)
+	# aşağı ışın: çatıya / zemine tam otur
+	var q := PhysicsRayQueryParameters3D.create(p + Vector3(0, 2, 0), p - Vector3(0, 800, 0), 1)
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if not hit.is_empty():
+		g = maxf(g, (hit.position as Vector3).y) if not world.in_city(p) else (hit.position as Vector3).y
+	global_position = Vector3(p.x, g + 0.4, p.z)
+	velocity = Vector3.ZERO
+	_safe = global_position
 	visual.rotation = Vector3(0, m.yaw, 0)
 	visual.lock_t = 0.0
 	powers.air_used = false

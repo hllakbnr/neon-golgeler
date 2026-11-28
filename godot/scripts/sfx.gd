@@ -54,6 +54,10 @@ static func stream(name: String) -> AudioStreamWAV:
 			s = _zap(0.35)
 		"roar":
 			s = _roar(1.4)
+		"engine":
+			s = _engine(1.0)
+		"tyre":
+			s = _noise_sweep(1.0, 1800.0, 2400.0, 0.4)
 		"static":
 			s = _noise_burst(0.35, 0.25)
 		_:
@@ -67,7 +71,7 @@ static func stream(name: String) -> AudioStreamWAV:
 	for i in s.size():
 		bytes.encode_s16(i * 2, int(clampf(s[i], -1.0, 1.0) * 32000.0))
 	w.data = bytes
-	if name == "siren":
+	if name in ["siren", "engine", "tyre"]:
 		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
 		w.loop_end = s.size()
 	_cache[name] = w
@@ -229,6 +233,21 @@ static func _roar(dur: float) -> PackedFloat32Array:
 		ph += TAU * (90.0 + 40.0 * sin(k * 9.0) - 30.0 * k) / RATE
 		lp = lerpf(lp, _rng.randf_range(-1.0, 1.0), 0.2)
 		o[i] = (sin(ph) * 0.5 + signf(sin(ph * 2.0)) * 0.15 + lp * 0.5) * sin(k * PI) * 0.8
+	return o
+
+
+static func _engine(dur: float) -> PackedFloat32Array:
+	## döngülü motor uğultusu: 4 zamanlı ateşleme darbeleri + harmonikler (perde devirle değişir)
+	var n := int(dur * RATE)
+	var o := PackedFloat32Array()
+	o.resize(n)
+	var f := 55.0
+	for i in n:
+		var t := float(i) / RATE
+		var ph := t * f
+		var fire := pow(0.5 + 0.5 * sin(TAU * ph * 2.0), 6.0)
+		var v := sin(TAU * ph) * 0.45 + sin(TAU * ph * 2.0) * 0.25 + sin(TAU * ph * 3.0) * 0.12 + fire * 0.35
+		o[i] = v * 0.55 + _rng.randf_range(-0.04, 0.04)
 	return o
 
 

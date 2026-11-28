@@ -56,7 +56,97 @@ static func named_labels(names: Array) -> Array:
 
 # ---------------------------------------------------------------- ana giriş
 func segment(geoms: Array) -> Dictionary:
-	## geoms: [{pos: PackedVector3Array, idx: PackedInt32Array}] → {ok, tl:[PackedByteArray], piv, info}
+	## Çok yoğun modellerde (on binlerce köşe) ayırma, hücrelere indirgenmiş bir vekil ağ üzerinde yapılır,
+	## etiketler sonra asıl üçgenlere geri taşınır — hem hızlı hem aynı sonuç.
+	var nv := 0
+	for g in geoms:
+		nv += (g.pos as PackedVector3Array).size()
+	if nv <= 14000:
+		return _segment_core(geoms)
+	var cell := H * 0.011
+	var cells := {}
+	var ppos := PackedVector3Array()
+	var cnt := PackedInt32Array()
+	var maps := []
+	for g in geoms:
+		var pos: PackedVector3Array = g.pos
+		var mp := PackedInt32Array()
+		mp.resize(pos.size())
+		for i in pos.size():
+			var p: Vector3 = pos[i]
+			var key := Vector3i(floori(p.x / cell), floori(p.y / cell), floori(p.z / cell))
+			var id: int = cells.get(key, -1)
+			if id < 0:
+				id = ppos.size()
+				cells[key] = id
+				ppos.append(p)
+				cnt.append(1)
+			else:
+				ppos[id] += p
+				cnt[id] += 1
+			mp[i] = id
+		maps.append(mp)
+	for i in ppos.size():
+		ppos[i] /= float(cnt[i])
+	var pidx := PackedInt32Array()
+	var seen := {}
+	for gi in geoms.size():
+		var ix: PackedInt32Array = geoms[gi].idx
+		var mp: PackedInt32Array = maps[gi]
+		for t in range(0, ix.size(), 3):
+			var a := mp[ix[t]]
+			var b := mp[ix[t + 1]]
+			var c := mp[ix[t + 2]]
+			if a == b or b == c or a == c:
+				continue
+			var k := Vector3i(mini(a, mini(b, c)), maxi(a, maxi(b, c)), a + b + c)
+			if seen.has(k):
+				continue
+			seen[k] = true
+			pidx.append(a)
+			pidx.append(b)
+			pidx.append(c)
+	var sub := _segment_core([{"pos": ppos, "idx": pidx}])
+	if not sub.get("ok", false):
+		return sub
+	# vekil köşe etiketleri: vekil üçgen etiketlerinden çoğunlukla
+	var ptl: PackedByteArray = sub.tl[0]
+	var vlab := PackedByteArray()
+	vlab.resize(ppos.size())
+	var votes := {}
+	for t in range(0, pidx.size(), 3):
+		var L := ptl[t / 3]
+		for k in 3:
+			var v := pidx[t + k]
+			var d: Dictionary = votes.get(v, {})
+			d[L] = int(d.get(L, 0)) + 1
+			votes[v] = d
+	for v in votes:
+		var best := 0
+		var bc := -1
+		for L in votes[v]:
+			if int(votes[v][L]) > bc:
+				bc = int(votes[v][L])
+				best = L
+		vlab[v] = best
+	var tl := []
+	for gi in geoms.size():
+		var ix: PackedInt32Array = geoms[gi].idx
+		var mp: PackedInt32Array = maps[gi]
+		var out := PackedByteArray()
+		out.resize(ix.size() / 3)
+		for t in range(0, ix.size(), 3):
+			var a := vlab[mp[ix[t]]]
+			var b := vlab[mp[ix[t + 1]]]
+			var c := vlab[mp[ix[t + 2]]]
+			out[t / 3] = a if (a == b or a == c) else (b if b == c else mini(a, mini(b, c)))
+		tl.append(out)
+	sub.tl = tl
+	sub.info["proxy"] = ppos.size()
+	return sub
+
+
+func _segment_core(geoms: Array) -> Dictionary:
 	_weld(geoms)
 	if n < 8:
 		return {"ok": false}
@@ -108,7 +198,20 @@ func segment(geoms: Array) -> Dictionary:
 		var hand := Vector3(X[iH], Y[iH], Z[iH])
 		var key := "armR" if L == 1 else "armL"
 		if cc.has("u"):
-			piv[key] = {"p": bc, "h": hand}
+			# omuz ekseni kolun üst ucuna yakın olmalı (sınırın ortası kolun ortasına düşer → kol gövdeden çıkar)
+			var uy: float = maxf(bc.y, yt - 0.045 * H)
+			var zs := 0.0
+			var xs := 0.0
+			var kk := 0
+			for i in n:
+				if lab[i] == L and absf(Y[i] - uy) < 0.025 * H:
+					zs += Z[i]
+					xs += X[i]
+					kk += 1
+			var ux: float = bc.x
+			if kk > 0:
+				ux = lerpf(bc.x, xs / kk, 0.35)
+			piv[key] = {"p": Vector3(ux, uy, zs / kk if kk > 0 else bc.z), "h": hand}
 			continue
 		var py: float = minf(yt - 0.02 * H, maxf(bc.y, yt - 0.05 * H))
 		var t: float = deg_to_rad(cc.th)

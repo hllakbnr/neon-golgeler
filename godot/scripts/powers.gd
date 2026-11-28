@@ -20,6 +20,7 @@ var dragon: Dragon = null
 var _vortex: Node3D = null
 var _hit_t := 0.0
 var _snd: AudioStreamPlayer3D
+var _hit_cars := {}
 
 
 func _init(player: Player) -> void:
@@ -72,7 +73,9 @@ func _spin_start() -> void:
 	spin_t = 4.0
 	spin_cd = 3.0
 	_hit_t = 0.0
-	_attach_vortex(0.85)
+	_attach_vortex(1.0)
+	_hit_cars.clear()
+	p.visual.visible = false
 	Sfx.play("swoosh_big", p.global_position, 0.0)
 	_snd = AudioStreamPlayer3D.new()
 	_snd.stream = Sfx.stream("swoosh_big")
@@ -84,8 +87,6 @@ func _spin_start() -> void:
 
 
 func _spin_update(delta: float) -> void:
-	p.visual.rotation.y += delta * 26.0
-	p.visual.play("idle", 0.1)
 	p.visual.lock_t = 0.1
 	_hit_t -= delta
 	if _hit_t > 0.0:
@@ -105,12 +106,16 @@ func _spin_update(delta: float) -> void:
 		p.world.hit_props(c + Vector3(0, 0.8, 0), 1.6, v.normalized() * 6.0 if v.length() > 0.5 else Vector3(0, 0, 4))
 	for n in get_tree().get_nodes_in_group("traffic"):
 		var tc := n as TrafficCar
-		if tc and tc.global_position.distance_to(c) < 3.2:
-			tc.hit((tc.global_position - c).normalized() * 8.0)
+		if tc and not _hit_cars.has(tc) and tc.global_position.distance_to(c) < 3.2:
+			_hit_cars[tc] = true
+			var d := tc.global_position - c
+			d.y = 0.0
+			tc.hit(d.normalized() * 3.5)
 
 
 func _spin_end() -> void:
 	spin_t = 0.0
+	p.visual.visible = true
 	if _snd and is_instance_valid(_snd):
 		_snd.queue_free()
 	_snd = null
@@ -122,13 +127,14 @@ func _spin_end() -> void:
 func _attach_vortex(scale: float) -> void:
 	_remove_vortex()
 	_vortex = vortex(C1, C2)
-	_vortex.scale = Vector3.ONE * scale
+	(_vortex as Vortex).size = scale
 	p.add_child(_vortex)
 
 
 func _remove_vortex() -> void:
 	if _vortex and is_instance_valid(_vortex):
 		var v := _vortex
+		v.set_process(false)
 		var tw := v.create_tween()
 		tw.tween_property(v, "scale", Vector3(0.05, 1.4, 0.05), 0.25)
 		tw.tween_callback(v.queue_free)
@@ -136,130 +142,10 @@ func _remove_vortex() -> void:
 
 
 static func vortex(c1: Color, c2: Color) -> Node3D:
-	## Element Arenası'ndaki kurulumun aynısı: model ~2,4 m genişlik, ~2,5 m yükseklik, gri doku × renk
-	var root := Node3D.new()
-	var spin := Node3D.new()
-	root.add_child(spin)
-	var body_sh := Shader.new()
-	body_sh.code = """
-shader_type spatial;
-render_mode unshaded, cull_disabled, depth_draw_never, blend_mix;
-uniform sampler2D tex : source_color, filter_nearest;
-uniform vec4 col : source_color;
-uniform float alpha = 0.82;
-uniform float glow = 1.0;
-void fragment() {
-	vec4 t = texture(tex, UV);
-	if (t.a < 0.05) discard;
-	float g = dot(t.rgb, vec3(0.299, 0.587, 0.114));
-	ALBEDO = col.rgb * (0.35 + g * 1.3) * glow;
-	ALPHA = alpha * t.a;
-}
-"""
-	var glow_sh := Shader.new()
-	glow_sh.code = """
-shader_type spatial;
-render_mode unshaded, cull_disabled, depth_draw_never, blend_add;
-uniform sampler2D tex : source_color, filter_nearest;
-uniform vec4 col : source_color;
-void fragment() {
-	vec4 t = texture(tex, UV);
-	if (t.a < 0.05) discard;
-	float g = dot(t.rgb, vec3(0.299, 0.587, 0.114));
-	ALBEDO = col.rgb * g * 2.2;
-	ALPHA = t.a;
-}
-"""
-	var ps: PackedScene = load("res://assets/fx/spinjitzu.glb") if ResourceLoader.exists("res://assets/fx/spinjitzu.glb") else null
-	if ps:
-		var inst: Node3D = ps.instantiate()
-		spin.add_child(inst)
-		var ab := AABB()
-		var first := true
-		for mi in inst.find_children("*", "MeshInstance3D", true, false):
-			var m := mi as MeshInstance3D
-			if m.mesh == null:
-				continue
-			var src := m.mesh.surface_get_material(0) as BaseMaterial3D
-			var tex: Texture2D = src.albedo_texture if src else null
-			var is_glow := src != null and (src.emission_enabled or String(src.resource_name).ends_with("1"))
-			var sm := ShaderMaterial.new()
-			sm.shader = glow_sh if is_glow else body_sh
-			sm.set_shader_parameter("tex", tex)
-			sm.set_shader_parameter("col", c2 if is_glow else c1)
-			m.material_override = sm
-			m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			var xf := Transform3D()
-			var nd: Node = m
-			while nd != null and nd != inst:
-				xf = (nd as Node3D).transform * xf
-				nd = nd.get_parent()
-			var b := xf * m.get_aabb()
-			ab = b if first else ab.merge(b)
-			first = false
-		var aps := inst.find_children("*", "AnimationPlayer", true, false)
-		if aps.size() > 0:
-			var ap := aps[0] as AnimationPlayer
-			var names := ap.get_animation_list()
-			if names.size() > 0:
-				var a := ap.get_animation(names[0])
-				a.loop_mode = Animation.LOOP_LINEAR
-				ap.play(names[0])
-				ap.speed_scale = 2.2
-		inst.scale = Vector3(2.4, 2.5, 2.4) / Vector3(maxf(ab.size.x, 0.1), maxf(ab.size.y, 0.1), maxf(ab.size.z, 0.1)) if not first else Vector3.ONE
-	else:
-		# model yoksa: üst üste dönen koniler
-		for k in 5:
-			var mi := MeshInstance3D.new()
-			var cm := CylinderMesh.new()
-			cm.top_radius = 0.5 + k * 0.22
-			cm.bottom_radius = 0.35 + k * 0.2
-			cm.height = 0.5
-			cm.radial_segments = 16
-			mi.mesh = cm
-			mi.material_override = Game.emissive(c1.lerp(c2, k / 5.0), 2.0)
-			mi.transparency = 0.4
-			mi.position.y = 0.3 + k * 0.48
-			spin.add_child(mi)
-	# iç halkalar ve yer halkası
-	for k in 2:
-		var tr := MeshInstance3D.new()
-		var tm := TorusMesh.new()
-		tm.inner_radius = 0.95 - k * 0.15
-		tm.outer_radius = 1.05 - k * 0.15
-		tr.mesh = tm
-		var m := StandardMaterial3D.new()
-		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-		m.albedo_color = c2 * 0.8
-		tr.material_override = m
-		tr.position.y = 0.8 + k * 0.9
-		spin.add_child(tr)
-	var ring := MeshInstance3D.new()
-	var rm := TorusMesh.new()
-	rm.inner_radius = 1.2
-	rm.outer_radius = 1.45
-	ring.mesh = rm
-	var m2 := StandardMaterial3D.new()
-	m2.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m2.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	m2.albedo_color = c1 * 0.6
-	ring.material_override = m2
-	ring.scale = Vector3(1, 0.15, 1)
-	ring.position.y = 0.05
-	root.add_child(ring)
-	var l := OmniLight3D.new()
-	l.light_color = c1
-	l.light_energy = 2.5
-	l.omni_range = 6.0
-	l.position.y = 1.2
-	root.add_child(l)
-	var tw := spin.create_tween().set_loops()
-	tw.tween_property(spin, "rotation:y", TAU, 0.35).from(0.0)
-	root.scale = Vector3(0.05, 1.2, 0.05)
-	var tw2 := root.create_tween()
-	tw2.tween_property(root, "scale", Vector3.ONE, 0.2).set_ease(Tween.EASE_OUT)
-	return root
+	var v := Vortex.new()
+	v.c1 = c1
+	v.c2 = c2
+	return v
 
 
 # ---------------------------------------------------------------- hava kasırgası
@@ -269,7 +155,7 @@ func _airjitzu() -> void:
 	p.velocity.y = 8.5
 	air_t = 2.2
 	if spin_t <= 0.0:
-		_attach_vortex(0.5)
+		_attach_vortex(0.55)
 	Sfx.play("swoosh_big", p.global_position, -4.0, 1.3)
 
 

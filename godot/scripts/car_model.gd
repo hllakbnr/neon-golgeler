@@ -4,8 +4,30 @@ class_name CarModel
 ## build() → {"ok": bool, "size": Vector3 (gövde boyutu), "wheels": [[konum, yarıçap, mesh düğümü]]}
 
 const SCALE := 1.5
-const DRIVABLE := ["sedan", "sedan-sports", "hatchback-sports", "taxi", "suv", "suv-luxury", "van", "police"]
-const TRAFFIC := ["sedan", "sedan", "taxi", "suv", "van", "hatchback-sports", "suv-luxury", "delivery", "truck", "sedan-sports"]
+const DRIVABLE := ["sedan", "sedan-sports", "hatchback-sports", "taxi", "suv", "suv-luxury", "van", "police", "race", "race-future",
+	"truck", "delivery", "ambulance", "garbage-truck", "firetruck", "truck-flat", "tractor"]
+const TRAFFIC := ["sedan", "sedan", "sedan", "taxi", "taxi", "suv", "van", "hatchback-sports", "suv-luxury", "delivery", "delivery-flat",
+	"truck", "truck-flat", "sedan-sports", "garbage-truck", "ambulance", "race"]
+## araç sınıfları: kütle, motor gücü, azami hız, vites sayısı, motor sesi tonu
+const SPECS := {
+	"sedan": [1350.0, 6000.0, 50.0, 5, 1.0], "taxi": [1400.0, 6000.0, 48.0, 5, 1.0], "police": [1500.0, 8200.0, 60.0, 6, 0.95],
+	"sedan-sports": [1300.0, 8400.0, 64.0, 6, 1.15], "hatchback-sports": [1150.0, 7200.0, 58.0, 6, 1.2],
+	"race": [1050.0, 10500.0, 78.0, 6, 1.3], "race-future": [1000.0, 11500.0, 84.0, 6, 1.4],
+	"suv": [1900.0, 7600.0, 50.0, 5, 0.85], "suv-luxury": [2000.0, 8400.0, 54.0, 6, 0.9], "van": [2100.0, 6800.0, 42.0, 5, 0.8],
+	"delivery": [2600.0, 7400.0, 38.0, 5, 0.75], "truck": [3800.0, 9800.0, 34.0, 6, 0.65], "truck-flat": [3500.0, 9400.0, 34.0, 6, 0.65],
+	"ambulance": [2700.0, 8200.0, 44.0, 5, 0.8], "garbage-truck": [5200.0, 11000.0, 28.0, 6, 0.6], "firetruck": [5600.0, 12000.0, 30.0, 6, 0.6],
+	"tractor": [2400.0, 7000.0, 18.0, 4, 0.7]}
+const PLAIN := ["sedan", "sedan-sports", "hatchback-sports", "suv", "suv-luxury", "van", "race", "race-future", "truck", "delivery", "truck-flat"]
+
+
+static func spec(model: String) -> Array:
+	return SPECS.get(model, SPECS.sedan)
+
+
+static func random_paint() -> Color:
+	var pal := [Color(0.75, 0.08, 0.1), Color(0.1, 0.2, 0.55), Color(0.92, 0.92, 0.94), Color(0.08, 0.08, 0.09), Color(0.55, 0.57, 0.6),
+		Color(0.1, 0.4, 0.22), Color(0.95, 0.75, 0.1), Color(0.95, 0.4, 0.05), Color(0.45, 0.1, 0.4), Color(0.2, 0.6, 0.75), Color(0.6, 0.45, 0.3)]
+	return pal[randi() % pal.size()]
 
 
 static func build(parent: Node3D, model: String, color := Color(0.8, 0.1, 0.12)) -> Dictionary:

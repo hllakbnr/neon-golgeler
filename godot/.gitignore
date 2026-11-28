@@ -16,3 +16,4 @@ data/world_r.bin
 data/world.json
 data/map.png
 data/map.png.import
+__pycache__/

@@ -106,7 +106,8 @@ func _physics_process(delta: float) -> void:
 		return
 	if state == S.DOWN:
 		_down -= delta
-		global_position += _vel * delta
+		var np := global_position + _vel * delta
+		global_position = world.walk_step(global_position, np) if world else np
 		_vel.x = move_toward(_vel.x, 0.0, delta * 9.0)
 		_vel.z = move_toward(_vel.z, 0.0, delta * 9.0)
 		_vel.y -= 12.0 * delta
@@ -231,7 +232,8 @@ func _path_step(delta: float, spd: float, dirsign: int) -> void:
 		idx = (idx + dirsign + path.size()) % path.size()
 		return
 	var dir := to_t.normalized()
-	global_position += dir * spd * delta
+	var np := global_position + dir * spd * delta
+	global_position = world.walk_step(global_position, np) if world else np
 	global_position.y = move_toward(global_position.y, _floor(global_position), delta * 2.0)
 	if not _far:
 		visual.rotation.y = lerp_angle(visual.rotation.y, atan2(dir.x, dir.z), minf(1.0, delta * 8.0))
@@ -244,7 +246,8 @@ func _move_to(p: Vector3, spd: float, delta: float, stop := 0.0) -> float:
 	var d := rel.length()
 	if d > stop:
 		var dir := rel / maxf(d, 0.001)
-		global_position += dir * minf(spd * delta, d - stop)
+		var np := global_position + dir * minf(spd * delta, d - stop)
+		global_position = world.walk_step(global_position, np) if world else np
 		global_position.y = move_toward(global_position.y, _floor(global_position), delta * 2.0)
 		visual.rotation.y = lerp_angle(visual.rotation.y, atan2(dir.x, dir.z), minf(1.0, delta * 10.0))
 		visual.set_motion(spd)
@@ -287,7 +290,7 @@ func _car_check() -> bool:
 			return true
 		if sp > 3.0 and d < 7.0 and cv.normalized().dot(-rel.normalized()) > 0.6 and state != S.DOWN:
 			var side := cn.global_transform.basis.x * (1.0 if rel.dot(cn.global_transform.basis.x) > 0 else -1.0)
-			global_position += side * 4.5 * get_physics_process_delta_time()
+			global_position = world.walk_step(global_position, global_position + side * 4.5 * get_physics_process_delta_time()) if world else global_position + side * 4.5 * get_physics_process_delta_time()
 			visual.rotation.y = atan2(side.x, side.z)
 			visual.set_motion(4.5)
 			return true
@@ -315,7 +318,7 @@ func take_hit(dmg: float, from: Vector3, heavy: bool, attacker: Node = null, stu
 		_knock(away * (5.0 if heavy else 2.0) + push * 0.6 + Vector3(0, 3.0, 0), 2.2 + stun_t)
 	else:
 		visual.action("hit", 1.1)
-		global_position += away * 0.35
+		global_position = world.walk_step(global_position, global_position + away * 0.35) if world else global_position + away * 0.35
 	threat = att
 	if att == null:
 		return
@@ -346,8 +349,11 @@ func _die(v: Vector3) -> void:
 	body_shape.set_deferred("disabled", true)
 	visual.action("die", 1.0, 0.05, 999.0)
 	var tw := create_tween()
-	var fl := _floor(global_position + v * 0.4)
-	tw.tween_property(self, "global_position", Vector3(global_position.x + v.x * 0.35, fl, global_position.z + v.z * 0.35), 0.5).set_ease(Tween.EASE_OUT)
+	var dest := Vector3(global_position.x + v.x * 0.35, 0.0, global_position.z + v.z * 0.35)
+	if world:
+		dest = world.walk_step(global_position, dest)
+	dest.y = _floor(dest)
+	tw.tween_property(self, "global_position", dest, 0.5).set_ease(Tween.EASE_OUT)
 	# yere düşen para (GTA'daki gibi toplanabilir)
 	if randf() < 0.75:
 		var pk := Pickup.new()

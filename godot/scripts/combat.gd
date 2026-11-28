@@ -34,7 +34,7 @@ var _regen_wait := 0.0
 var _model: Node3D
 var _queued := false
 var _lock := false
-var _wheel: RadialWheel = null
+var _wheel: Node = null
 
 
 func _init(player: Player) -> void:
@@ -54,6 +54,9 @@ func equip(id: String) -> void:
 		if sock:
 			_model = Weapons.mesh(id)
 			sock.add_child(_model)
+	var w := Weapons.info(id)
+	if p.visual:
+		p.visual.idle_anim = String(w.get("idle", "idle"))
 	weapon_changed.emit(id)
 
 
@@ -63,8 +66,10 @@ func cycle(dir: int) -> void:
 
 
 func refresh_model() -> void:
-	## karakter modeli değişince silah yeni ele takılır
+	## karakter modeli değişince silah yeni ele takılır, aksesuarlar yeniden giyilir
 	equip(weapon)
+	if p.visual and not Game.accessories.is_empty():
+		p.visual.set_accessories(Game.accessories)
 
 
 # ---------------------------------------------------------------- her kare
@@ -94,6 +99,11 @@ func tick(delta: float, on_foot: bool) -> void:
 				_apply(h)
 		else:
 			i += 1
+	if _model and is_instance_valid(_model) and Weapons.info(weapon).get("twirl", false):
+		if busy <= 0.0 and not blocking:
+			_model.rotation.x += delta * 16.0
+		else:
+			_model.rotation.x = 0.0
 	if not on_foot:
 		blocking = false
 		target = null
@@ -134,17 +144,8 @@ func tick(delta: float, on_foot: bool) -> void:
 
 
 func _open_wheel() -> void:
-	var wh := RadialWheel.new()
-	wh.title = "SİLAHLAR"
-	wh.action = "weapon_wheel"
-	for id in owned:
-		var w := Weapons.info(id)
-		var sub := "Hasar %d · Menzil %.1f m" % [int(w.dmg), float(w.range)]
-		if String(w.kind) == "throw":
-			sub = "Cephane ×%d" % int(ammo.get(id, 0))
-		wh.items.append({"id": id, "label": w.name, "short": w.name, "weapon": id, "sub": sub, "col": Color(1.0, 0.55, 0.15)})
-	wh.sel = owned.find(weapon)
-	wh.chosen.connect(equip)
+	var wh := GearWheel.new()
+	wh.player = p
 	get_tree().current_scene.add_child(wh)
 	_wheel = wh
 
@@ -161,7 +162,7 @@ func move_scale() -> float:
 		return 0.15
 	if blocking:
 		return 0.35
-	return 1.0
+	return float(Weapons.info(weapon).get("move", 1.0))
 
 
 func lunge_velocity() -> Vector3:
@@ -198,6 +199,11 @@ func _attack(heavy: bool) -> void:
 		busy = L * 0.7
 		var tgt := target
 		get_tree().create_timer(L * 0.35).timeout.connect(func(): _throw(face, tgt, float(w.dmg)))
+		if heavy and int(ammo.get(weapon, 0)) >= 2:
+			ammo[weapon] = int(ammo[weapon]) - 2
+			for sgn in [-1.0, 1.0]:
+				var fd := face.rotated(Vector3.UP, sgn * 0.22)
+				get_tree().create_timer(L * 0.35).timeout.connect(func(): _throw(fd, null, float(w.dmg)))
 		Sfx.play("whoosh", p.global_position, 0.0, 1.4)
 		return
 	stamina = maxf(0.0, stamina - cost)
@@ -219,13 +225,37 @@ func _attack(heavy: bool) -> void:
 	_combo_t = L + 0.5
 	var dmg: float = float(w.dmg) * (1.9 if heavy else 1.0) * (0.5 if weak else 1.0) * dmg_mult
 	var rng: float = float(w.range)
-	if anim_name == "sword_combo":
-		for k in range(3):
-			_hits.append({"t": L * (0.25 + 0.22 * k), "dmg": dmg * 0.45, "range": rng, "heavy": k == 2, "stun": float(w.get("stun", 0.0))})
-	else:
-		_hits.append({"t": L * (0.42 if heavy else 0.36), "dmg": dmg, "range": rng, "heavy": heavy, "stun": float(w.get("stun", 0.0))})
+	var st: float = float(w.get("stun", 0.0))
 	lunge = face * (3.2 if heavy else 2.0)
 	_lunge_t = 0.16
+	var fx := String(w.get("fx", "")) if heavy else ""
+	match fx:
+		"flurry":
+			for k in range(4):
+				_hits.append({"t": L * (0.18 + 0.17 * k), "dmg": dmg * 0.35, "range": rng, "heavy": k == 3, "stun": st})
+		"dash":
+			# ileri atılarak vuruş
+			lunge = face * 9.0
+			_lunge_t = 0.22
+			_hits.append({"t": L * 0.3, "dmg": dmg, "range": rng + 1.2, "heavy": true, "stun": st})
+		"smash":
+			# iki elle yere vuruş: çevresindeki herkes savrulur
+			_hits.append({"t": L * 0.5, "dmg": dmg, "range": rng + 0.8, "heavy": true, "stun": st, "arc": true, "fx": "smash"})
+		"spin":
+			# 360° dönerek savurma
+			var tw := p.visual.create_tween()
+			var r0 := p.visual.rotation.y
+			tw.tween_property(p.visual, "rotation:y", r0 + TAU, L * 0.6).set_delay(L * 0.15)
+			for k in range(2):
+				_hits.append({"t": L * (0.35 + 0.25 * k), "dmg": dmg * 0.6, "range": rng + 0.4, "heavy": k == 1, "stun": st, "arc": true})
+		"zap":
+			_hits.append({"t": L * 0.4, "dmg": dmg, "range": rng + 2.0, "heavy": false, "stun": 2.8, "fx": "zap"})
+		_:
+			if anim_name == "sword_combo":
+				for k in range(3):
+					_hits.append({"t": L * (0.25 + 0.22 * k), "dmg": dmg * 0.45, "range": rng, "heavy": k == 2, "stun": st})
+			else:
+				_hits.append({"t": L * (0.42 if heavy else 0.36), "dmg": dmg, "range": rng, "heavy": heavy, "stun": st})
 	Sfx.play("whoosh", p.global_position, -4.0, randf_range(0.9, 1.15) * (0.8 if heavy else 1.0))
 
 
@@ -247,10 +277,18 @@ func _apply(h: Dictionary) -> void:
 		var d := rel.length()
 		if d > float(h.range) + 0.45 or absf(tn.global_position.y - p.global_position.y) > 1.6:
 			continue
-		if d > 0.35 and fwd.dot(rel / d) < 0.2:
+		if d > 0.35 and not h.get("arc", false) and fwd.dot(rel / d) < 0.2:
 			continue
 		t.take_hit(float(h.dmg), p.global_position, bool(h.heavy), p, float(h.stun))
 		hit = true
+	match String(h.get("fx", "")):
+		"smash":
+			Fx.ring(p.global_position + Vector3(0, 0.1, 0), Color(1, 0.9, 0.7), 4.0, 0.4)
+			Fx.dust(p.global_position, 1.6)
+			p.shake(0.3)
+		"zap":
+			Fx.bolt(p.global_position + Vector3(0, 1.3, 0), p.global_position + fwd * (float(h.range)) + Vector3(0, 1.1, 0), Color(0.5, 0.85, 1.0))
+			Sfx.play("zap", p.global_position, -2.0)
 	# kırılabilir eşyalar (çöp kutusu, lamba…)
 	var w := p.world
 	if w and w.has_method("hit_props"):

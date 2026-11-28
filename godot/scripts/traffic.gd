@@ -14,6 +14,7 @@ var half_len := 2.0
 var lights := {}
 var wheel_nodes: Array = []
 var crashed := 0.0
+static var _res := {}             # kavşak → içinden geçen araç (aynı anda tek araç)
 var pursuit: Node3D = null      # polis: kovalanan hedef
 var police_unit := false        # aranma sistemiyle gelen ekip (işi bitince gider)
 var _siren: Array = []
@@ -38,6 +39,18 @@ func _ready() -> void:
 	physics_material_override = pm
 	body_entered.connect(_on_body)
 	var info := CarModel.build(self, model)
+	if CarModel.PLAIN.has(model):
+		var pc := CarModel.random_paint()
+		for mi in find_children("*", "MeshInstance3D", true, false):
+			var m := mi as MeshInstance3D
+			if String(m.name).to_lower() == "body":
+				var mat := m.material_override as StandardMaterial3D
+				if mat == null:
+					mat = m.get_active_material(0) as StandardMaterial3D
+				if mat:
+					var nm := mat.duplicate() as StandardMaterial3D
+					nm.albedo_color = pc.lightened(0.15)
+					m.material_override = nm
 	var sz: Vector3 = info.size
 	var c: Vector3 = info.center
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
@@ -149,14 +162,26 @@ func _on_body(b: Node) -> void:
 		hit((b as RigidBody3D).linear_velocity)
 
 
+func _release() -> void:
+	for k in _res.keys():
+		if _res[k] == self:
+			_res.erase(k)
+
+
+func _exit_tree() -> void:
+	_release()
+
+
 func hit(other_vel: Vector3) -> void:
 	## çarpışma: kinematikten gerçek fiziğe geç
 	if crashed > 0.0:
 		return
+	_release()
+	other_vel.y = minf(other_vel.y, 0.5)
 	crashed = 7.0
 	var fwd := global_transform.basis.z
 	freeze = false
-	linear_velocity = fwd * speed + other_vel * 0.35
+	linear_velocity = fwd * speed + Vector3(other_vel.x, 0.0, other_vel.z) * 0.35
 	angular_velocity = Vector3(0, randf_range(-0.6, 0.6), 0)
 	speed = 0.0
 	if lights.has("brake"):
@@ -197,10 +222,19 @@ func _recover() -> void:
 		crashed = 1.0
 		return
 	var ni := Vector2i(clampi(int(round(global_position.x / world.CELL)), -world.GX, world.GX), clampi(int(round(global_position.z / world.CELL)), -world.GZ, world.GZ))
+	# başka aracın üstünde/içinde kaldıysa ya da yoldan çıktıysa şeride yerleştir
+	var overlap := false
+	for n in get_tree().get_nodes_in_group("traffic") + get_tree().get_nodes_in_group("cars"):
+		if n != self and (n as Node3D).global_position.distance_to(global_position) < 3.2:
+			overlap = true
+			break
+	if overlap and not far:
+		crashed = 1.0
+		return
 	from = ni
 	to = ni
 	_next()
-	if not up_ok:
+	if not up_ok or overlap or global_position.y > 0.6 or far:
 		_place()
 	else:
 		global_rotation = Vector3(0, global_rotation.y, 0)
@@ -240,11 +274,20 @@ func _physics_process(delta: float) -> void:
 			_deployed = false
 	# ışık: x yönündeki hareket faz 0'da, z yönündeki faz 1'de yeşil
 	var along_x: bool = from.y == to.y
-	var phase := int(Time.get_ticks_msec() / 8000) % 2
-	var green := (phase == 0) == along_x
+	var tm := Time.get_ticks_msec()
+	var phase := int(tm / 8000) % 2
+	var green := (phase == 0) == along_x and (tm % 8000) < 6300   # son 1,7 sn herkese kırmızı (kavşak boşalsın)
 	var stop_line: float = world.ROAD_W * 0.5 + 4.0
 	if not green and pursuit == null and dist > stop_line - 1.0 and dist < stop_line + 8.0:
 		want = 0.0 if dist < stop_line + 1.5 else 3.0
+	# kavşak sırası: kavşakta başka araç varsa girmeden bekle
+	if dist < stop_line + 7.0 and dist > 3.0:
+		var occ: Variant = _res.get(to)
+		if occ != null and is_instance_valid(occ) and occ != self and (occ as Node3D).global_position.distance_to(_node_pos(to)) < stop_line + 4.0:
+			if dist > stop_line - 1.0:
+				want = 0.0 if dist < stop_line + 1.5 else minf(want, 3.0)
+		elif dist < stop_line + 1.0 or green or pursuit:
+			_res[to] = self
 	# önündeki engeller (araçlar, yayalar, oyuncu)
 	var fwd := global_transform.basis.z
 	for n in get_tree().get_nodes_in_group("traffic") + get_tree().get_nodes_in_group("cars") + get_tree().get_nodes_in_group("people") + get_tree().get_nodes_in_group("police") + get_tree().get_nodes_in_group("player"):

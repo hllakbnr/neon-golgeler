@@ -102,6 +102,10 @@ func run() -> void:
 	var nv := int(d.version)
 	title.text = "Yeni sürüm bulundu: %d" % nv
 	info.text = String(d.get("notes", "")).left(400)
+	# parçalı güncelleme: exe aynı tabandansa yalnızca değişen dosyaların paketi indirilir
+	if String(d.get("patch", "")) != "" and int(d.get("base", -1)) == Patcher.exe_version:
+		await _patch(d)
+		return
 	var exe := OS.get_executable_path()
 	_new_path = exe.get_base_dir().path_join(TEMP_NAME)
 	http.timeout = 0.0
@@ -132,9 +136,46 @@ func run() -> void:
 		DirAccess.rename_absolute(exe + ".old", exe)
 		_finish("Güncelleme kurulamadı, mevcut sürümle devam ediliyor.", 2.0)
 		return
+	for yp in ["user://yama/yama.pck", "user://yama/yama.json"]:
+		if FileAccess.file_exists(yp):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(yp))
 	title.text = "Oyun yeniden başlatılıyor…"
 	await get_tree().create_timer(0.8).timeout
 	OS.create_process(exe, OS.get_cmdline_args())
+	get_tree().quit()
+
+
+func _patch(d: Dictionary) -> void:
+	DirAccess.make_dir_recursive_absolute("user://yama")
+	var tmp := ProjectSettings.globalize_path("user://yama/yama.indiriliyor")
+	http.timeout = 0.0
+	http.download_file = tmp
+	http.download_chunk_size = 1 << 18
+	_downloading = true
+	title.text = "Güncelleme indiriliyor (yalnızca değişenler)…"
+	http.request(BASE + String(d.patch) + "?v=%d" % int(d.version))
+	var res: Array = await http.request_completed
+	_downloading = false
+	http.download_file = ""
+	var want := int(d.get("patch_size", 0))
+	var f := FileAccess.open(tmp, FileAccess.READ)
+	var size := f.get_length() if f else 0
+	if f:
+		f.close()
+	if res[0] != HTTPRequest.RESULT_SUCCESS or res[1] != 200 or size < 64 or (want > 0 and size != want):
+		DirAccess.remove_absolute(tmp)
+		_finish("Güncelleme indirilemedi, mevcut sürümle devam ediliyor.", 2.0)
+		return
+	var dst := ProjectSettings.globalize_path("user://yama/yama.pck")
+	if FileAccess.file_exists(dst):
+		DirAccess.remove_absolute(dst)
+	DirAccess.rename_absolute(tmp, dst)
+	var mf := FileAccess.open("user://yama/yama.json", FileAccess.WRITE)
+	mf.store_string(JSON.stringify({"base": Patcher.exe_version, "version": int(d.version)}))
+	mf.close()
+	title.text = "Oyun yeniden başlatılıyor…"
+	await get_tree().create_timer(0.6).timeout
+	OS.create_process(OS.get_executable_path(), OS.get_cmdline_args())
 	get_tree().quit()
 
 

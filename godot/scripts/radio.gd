@@ -18,7 +18,8 @@ const STATIONS := [
 
 var player: Player
 var station := ""
-var last := "neonfm"
+var last := ""
+var user_off := false           # oyuncu radyoyu kapattıysa araca binince de kapalı kalır
 var on_foot := false            # telefondan açıldıysa yürürken de çalar (kulaklık)
 var _music: AudioStreamPlayer
 var _dj: AudioStreamPlayer
@@ -93,7 +94,9 @@ func _stream(id: String) -> AudioStream:
 	return st
 
 
-func select(id: String, from_phone := false) -> void:
+func select(id: String, from_phone := false, auto := false) -> void:
+	if not auto:
+		user_off = id == ""
 	if id == station:
 		return
 	station = id
@@ -151,10 +154,10 @@ func set_club(on: bool) -> void:
 	## kulüp içinde Neon FM yüksek sesle çalar
 	_club = on
 	if on:
-		select("neonfm")
+		select("neonfm", false, true)
 		_music.volume_db = 2.0
 	elif player and player.car == null and not on_foot:
-		select("")
+		select("", false, true)
 
 
 func _process(delta: float) -> void:
@@ -164,9 +167,12 @@ func _process(delta: float) -> void:
 		return
 	var in_car := player.car != null
 	if in_car and not _was_in_car and not _club:
-		select(last)
+		if last == "":
+			last = String(STATIONS[randi() % STATIONS.size()].id)
+		if not user_off:
+			select(last, false, true)
 	elif not in_car and _was_in_car and not on_foot and not _club:
-		select("")
+		select("", false, true)
 	_was_in_car = in_car
 	# radyo çarkı (araçta Q basılı)
 	if in_car and not Game.paused and Input.is_action_just_pressed("radio") and (_wheel == null or not is_instance_valid(_wheel)):

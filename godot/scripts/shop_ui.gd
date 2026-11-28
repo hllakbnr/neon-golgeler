@@ -18,7 +18,8 @@ const CATALOG := {
 	"market": [
 		{"id": "su", "name": "Su", "price": 3, "desc": "+5 can", "heal": 5},
 		{"id": "kraker", "name": "Pirinç Krakeri", "price": 6, "desc": "+12 can", "heal": 12},
-		{"id": "kit", "name": "İlk Yardım Çantası", "price": 80, "desc": "Canı tamamen doldurur", "heal": 100},
+		{"id": "kit", "name": "İlk Yardım Çantası", "price": 80, "desc": "Çantaya eklenir — silah çarkında 1 ile kullan: canı tamamen doldurur", "inv": "kit"},
+		{"id": "icecek", "name": "Enerji İçeceği", "price": 25, "desc": "Çantaya eklenir — silah çarkında 2 ile kullan: 45 sn bitmeyen dayanıklılık", "inv": "icecek"},
 		{"id": "sapka", "name": "Şapka ve Güneş Gözlüğü", "price": 45, "desc": "Görünüşünü değiştirir: polis aranırken tarifini bozar", "disguise": true},
 	],
 	"silah": [
@@ -206,6 +207,8 @@ func _buy() -> void:
 		cb.boost = maxf(cb.boost, float(it.boost))
 	if it.has("armor"):
 		cb.armor = minf(100.0, cb.armor + float(it.armor))
+	if it.has("inv"):
+		Game.items[String(it.inv)] = int(Game.items.get(String(it.inv), 0)) + 1
 	if it.has("ammo"):
 		cb.ammo["shuriken"] = int(cb.ammo.get("shuriken", 0)) + int(it.ammo)
 	if it.has("weapon"):

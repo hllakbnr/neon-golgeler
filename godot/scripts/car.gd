@@ -17,6 +17,15 @@ var _steer := 0.0
 var _thr := 0.0
 var _prop_t := 0.0
 var horn_ok := true
+var health := 100.0               # araç hasarı: azalınca kaputtan duman, sıfırda motor durur
+var gear := 1
+var rpm := 0.0
+var _gears := 5
+var _tone := 1.0
+var _eng: AudioStreamPlayer3D
+var _tyre: AudioStreamPlayer3D
+var _smoke: CPUParticles3D
+var _shift_t := 0.0
 
 
 func _ready() -> void:
@@ -25,8 +34,15 @@ func _ready() -> void:
 	max_contacts_reported = 4
 	body_entered.connect(func(b: Node):
 		if b is TrafficCar:
-			(b as TrafficCar).hit(linear_velocity))
-	mass = 1450.0
+			(b as TrafficCar).hit(linear_velocity)
+		_impact())
+	var sp := CarModel.spec(model)
+	mass = float(sp[0])
+	max_force = float(sp[1]) * mass / 1350.0 * 0.82
+	top_speed = float(sp[2])
+	_gears = int(sp[3])
+	_tone = float(sp[4])
+	max_brake = 55.0 * mass / 1350.0
 	collision_mask = 1 | 2              # 2: araçlara özel kaldırım kenarı
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 	angular_damp = 0.6
@@ -54,7 +70,8 @@ func _ready() -> void:
 		vw.wheel_rest_length = 0.14
 		vw.suspension_travel = 0.16
 		vw.suspension_stiffness = 85.0
-		vw.suspension_max_force = 9000.0
+		vw.suspension_max_force = 9000.0 * mass / 1350.0
+		vw.suspension_stiffness = 85.0 if mass < 2500.0 else 110.0
 		vw.damping_compression = 6.0
 		vw.damping_relaxation = 7.5
 		vw.wheel_friction_slip = 2.9 if front else 2.7
@@ -71,6 +88,80 @@ func _ready() -> void:
 			mesh.position = Vector3.ZERO
 		else:
 			vw.add_child(CarModel.tire_mesh(w[1]))
+	if CarModel.PLAIN.has(model):
+		repaint(CarModel.random_paint())
+
+
+func _impact() -> void:
+	## çarpma şiddetine göre hasar, ses, sarsıntı
+	var v := linear_velocity.length()
+	if v < 4.0:
+		return
+	var dmg := (v - 4.0) * 1.6
+	health = maxf(0.0, health - dmg)
+	Sfx.play("crash", global_position, clampf(-14.0 + v, -14.0, 4.0), randf_range(0.85, 1.1))
+	if driven:
+		var pl := get_tree().get_first_node_in_group("player") as Player
+		if pl:
+			pl.shake(clampf(v * 0.02, 0.1, 0.5))
+	if health < 40.0 and _smoke == null:
+		_smoke = CPUParticles3D.new()
+		_smoke.amount = 24
+		_smoke.lifetime = 1.6
+		var qm := QuadMesh.new()
+		qm.size = Vector2(0.6, 0.6)
+		var m := StandardMaterial3D.new()
+		m.albedo_color = Color(0.25, 0.25, 0.27, 0.5)
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		qm.material = m
+		_smoke.mesh = qm
+		_smoke.direction = Vector3.UP
+		_smoke.initial_velocity_min = 1.0
+		_smoke.initial_velocity_max = 2.0
+		_smoke.gravity = Vector3(0, 1.2, 0)
+		_smoke.scale_amount_max = 2.5
+		_smoke.position = Vector3(0, size.y * 0.55, size.z * 0.35)
+		add_child(_smoke)
+
+
+func _engine_audio(delta: float, thr: float) -> void:
+	## motor sesi: vites ve devire göre perde; lastik sesi kayınca
+	if _eng == null:
+		_eng = AudioStreamPlayer3D.new()
+		_eng.stream = Sfx.stream("engine")
+		_eng.unit_size = 8.0
+		_eng.max_distance = 90.0
+		_eng.bus = "SFX" if AudioServer.get_bus_index("SFX") >= 0 else "Master"
+		add_child(_eng)
+		_eng.play()
+		_tyre = AudioStreamPlayer3D.new()
+		_tyre.stream = Sfx.stream("tyre")
+		_tyre.unit_size = 8.0
+		_tyre.volume_db = -60.0
+		_tyre.bus = _eng.bus
+		add_child(_tyre)
+		_tyre.play()
+	var v := absf(fwd_speed())
+	var per := top_speed / float(_gears)
+	var want_gear := clampi(int(v / per) + 1, 1, _gears)
+	_shift_t -= delta
+	if want_gear != gear and _shift_t <= 0.0:
+		gear = want_gear
+		_shift_t = 0.35
+	var g0 := (gear - 1) * per
+	var target_rpm := clampf((v - g0) / per, 0.0, 1.0) * 0.8 + 0.18 + thr * 0.12
+	if _shift_t > 0.15:
+		target_rpm *= 0.7
+	rpm = lerpf(rpm, target_rpm, minf(1.0, delta * 6.0))
+	_eng.pitch_scale = (0.55 + rpm * 1.25) * _tone
+	_eng.volume_db = lerpf(-14.0, -2.0, clampf(rpm * 0.6 + thr * 0.4, 0.0, 1.0)) if health > 0.0 else -60.0
+	var side := absf(linear_velocity.dot(global_transform.basis.x))
+	var skid := clampf((side - 3.0) / 6.0, 0.0, 1.0)
+	if Input.is_action_pressed("handbrake") and v > 6.0:
+		skid = maxf(skid, 0.8)
+	_tyre.volume_db = lerpf(-50.0, -6.0, skid)
 
 
 func set_driver(on: bool) -> void:
@@ -106,6 +197,9 @@ func _physics_process(delta: float) -> void:
 	if driven and horn_ok and not Game.paused and Input.is_action_just_pressed("horn"):
 		Sfx.play("horn", global_position, -2.0)
 	if not driven:
+		if _eng:
+			_eng.volume_db = -60.0
+			_tyre.volume_db = -60.0
 		return
 	var thr := 0.0
 	var brk := 0.0
@@ -115,6 +209,9 @@ func _physics_process(delta: float) -> void:
 		brk = clamp(Input.get_action_strength("move_back") + Input.get_action_strength("brake"), 0.0, 1.0)
 		st = Input.get_axis("move_right", "move_left")
 	var v := fwd_speed()
+	if health <= 0.0:
+		thr = 0.0
+	_engine_audio(delta, thr)
 	# gaz yumuşak gelir (ani tork → yalpa yok)
 	_thr = move_toward(_thr, thr, delta * 2.5)
 	# hıza duyarlı direksiyon: düşük hızda 0,6 rad, yüksek hızda ~0,16 rad

@@ -34,6 +34,8 @@ var own := {}                 # kendi animasyonlu modellerde eşleme
 var crouch := false
 var leg_len := 1.0
 var note := ""
+var idle_anim := "idle"       # silaha göre duruş (ör. kılıç duruşu)
+var walk_anim := "walk"
 var lock_t := 0.0             # tek seferlik hareket (saldırı, darbe…) sürerken yürüme animasyonu karışmaz
 var _hand: Node3D = null      # sağ el soketi (silah buraya takılır)
 
@@ -517,6 +519,78 @@ func tint(c: Color) -> void:
 			m.set_surface_override_material(si, nm)
 
 
+func set_accessories(acc: Dictionary) -> void:
+	## maske / gözlük / şapka: başın sınır kutusuna göre yerleştirilir
+	var head: Node3D = pivots.get("head")
+	var holder: Node3D = head
+	var lo := Vector3(-0.25, 1.9, -0.25)
+	var hi := Vector3(0.25, 2.45, 0.25)
+	if head == null:
+		holder = self
+	else:
+		var inv := head.global_transform.affine_inverse()
+		var meshes: Array = head.find_children("*", "MeshInstance3D", true, false)
+		if head is MeshInstance3D:
+			meshes.append(head)
+		var l2 := Vector3(INF, INF, INF)
+		var h2 := Vector3(-INF, -INF, -INF)
+		for mi in meshes:
+			var m := mi as MeshInstance3D
+			if m.mesh == null or String(m.name).begins_with("aksesuar"):
+				continue
+			var ab := m.get_aabb()
+			for c in 8:
+				var q: Vector3 = inv * (m.global_transform * ab.get_endpoint(c))
+				l2 = l2.min(q)
+				h2 = h2.max(q)
+		if l2.x < INF:
+			lo = l2
+			hi = h2
+	for c in holder.get_children():
+		if String(c.name).begins_with("aksesuar"):
+			c.queue_free()
+	var sz := hi - lo
+	var ctr := (lo + hi) * 0.5
+	if acc.get("maske", false):
+		var mk := MeshInstance3D.new()
+		mk.name = "aksesuar_maske"
+		var bm := BoxMesh.new()
+		bm.size = Vector3(sz.x * 1.06, sz.y * 0.42, sz.z * 1.06)
+		mk.mesh = bm
+		mk.material_override = Game.paint(Color(0.08, 0.08, 0.1), 0.0, 0.8)
+		mk.position = Vector3(ctr.x, lo.y + sz.y * 0.26, ctr.z)
+		holder.add_child(mk)
+	if acc.get("gozluk", false):
+		var g := MeshInstance3D.new()
+		g.name = "aksesuar_gozluk"
+		var gb := BoxMesh.new()
+		gb.size = Vector3(sz.x * 0.86, sz.y * 0.13, 0.03)
+		g.mesh = gb
+		g.material_override = Game.paint(Color(0.02, 0.02, 0.03), 0.9, 0.1)
+		g.position = Vector3(ctr.x, lo.y + sz.y * 0.6, hi.z + 0.015)
+		holder.add_child(g)
+	if acc.get("sapka", false):
+		var hat := MeshInstance3D.new()
+		hat.name = "aksesuar_sapka"
+		var cm := CylinderMesh.new()
+		cm.top_radius = sz.x * 0.5
+		cm.bottom_radius = sz.x * 0.56
+		cm.height = sz.y * 0.28
+		hat.mesh = cm
+		var hm := Game.paint(Color(0.85, 0.2, 0.2), 0.0, 0.7)
+		hat.material_override = hm
+		hat.position = Vector3(ctr.x, hi.y + sz.y * 0.08, ctr.z)
+		holder.add_child(hat)
+		var brim := MeshInstance3D.new()
+		brim.name = "aksesuar_siper"
+		var bb := BoxMesh.new()
+		bb.size = Vector3(sz.x * 0.9, 0.03, sz.z * 0.5)
+		brim.mesh = bb
+		brim.material_override = hm
+		brim.position = Vector3(ctr.x, hi.y - sz.y * 0.04, hi.z + sz.z * 0.2)
+		holder.add_child(brim)
+
+
 func hand_socket() -> Node3D:
 	## sağ el noktası: blok/parça modellerde kol pivotunun altı, iskeletli modellerde el kemiği
 	if _hand and is_instance_valid(_hand):
@@ -601,9 +675,9 @@ func set_motion(speed: float, on_ground := true) -> void:
 		else:
 			play("crouch_walk", 0.2, clampf(speed / (NOMINAL.crouch_walk * k), 0.6, 2.0))
 	elif speed < 0.3:
-		play("idle", 0.3)
+		play(idle_anim if has_anim(idle_anim) else "idle", 0.3)
 	elif speed < 2.2:
-		play("walk", 0.25, clampf(speed / (NOMINAL.walk * k), 0.6, 1.5))
+		play(walk_anim if has_anim(walk_anim) else "walk", 0.25, clampf(speed / (NOMINAL.walk * k), 0.6, 1.5))
 	elif speed < 5.4:
 		play("jog", 0.25, clampf(speed / (NOMINAL.jog * k), 0.7, 1.4))
 	else:

@@ -50,6 +50,9 @@ func _ready() -> void:
 	add_child(menu)
 	menu.play_pressed.connect(_start_game)
 	menu.resume_pressed.connect(_resume)
+	menu.map_pressed.connect(func():
+		_resume()
+		open_map())
 	menu.open(false)
 	if Game.shots_dir != "":
 		_run_shots()
@@ -128,7 +131,10 @@ func _start_game() -> void:
 		["suv-luxury", Vector3(20.0, 0.5, 235.4), -PI * 0.5], ["sedan", Vector3(124.0, 0.5, -155.4), PI * 0.5],
 		["truck", Vector3(-440.0, 0.6, -40.0), 0.0], ["sedan-sports", Vector3(-430.0, 0.6, -110.0), PI],
 		["suv", Vector3(225.0, -1.0, -925.0), PI], ["hatchback-sports", Vector3(450.0, -1.0, 4.0), -PI * 0.5],
-		["police", Vector3(-1000.0, -1.0, -920.0), 0.0], ["suv", Vector3(2930.0, -1.0, 1660.0), PI]]
+		["police", Vector3(-1000.0, -1.0, -920.0), 0.0], ["suv", Vector3(2930.0, -1.0, 1660.0), PI],
+		["race", Vector3(155.4, 0.5, -60.0), 0.0], ["race-future", Vector3(244.6, 0.5, 60.0), PI], ["ambulance", Vector3(235.4, 0.5, -30.0), 0.0],
+		["delivery", Vector3(-235.4, 0.5, -140.0), 0.0], ["garbage-truck", Vector3(-4.6, 0.5, 140.0), PI], ["firetruck", Vector3(-84.6, 0.5, 140.0), PI],
+		["truck-flat", Vector3(-450.0, 0.6, -200.0), 0.0], ["tractor", Vector3(880.0, -1.0, 3150.0), 0.0], ["sedan", Vector3(4.6, 0.5, -100.0), 0.0]]
 	for p in parked:
 		var c := Car.new()
 		c.model = p[0]
@@ -210,7 +216,11 @@ func _start_game() -> void:
 	player.cam.make_current()
 	if Game.shots_dir == "":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-		get_tree().create_timer(2.0).timeout.connect(func(): dialog.play_scene("intro"))
+		var intro := Intro.new()
+		intro.world = world
+		intro.player = player
+		add_child(intro)
+		intro.finished.connect(func(): get_tree().create_timer(1.0).timeout.connect(func(): dialog.play_scene("intro")))
 
 
 func _unhandled_input(e: InputEvent) -> void:
@@ -703,6 +713,17 @@ func _run_shots() -> void:
 		await _wait(8)
 		await Game.shot("39_etkilesim")
 		tm._close()
+	# giriş sineması (ilk kare) ve eşya sekmesi
+	var intro := Intro.new()
+	intro.world = world
+	intro.player = player
+	add_child(intro)
+	await _wait(8)
+	await Game.shot("47_giris")
+	intro._skip = true
+	await _wait(12)
+	player.controls = true
+	_player_cam()
 	# güçler: kasırga, ejderha
 	player.combat.stamina = 100.0
 	player.powers._spin_start()

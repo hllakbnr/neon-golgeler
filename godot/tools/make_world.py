@@ -217,7 +217,10 @@ city_w = smoothstep(140, 30, cd_city)
 h = h * (1 - city_w) + 0.0 * city_w
 # liman rıhtımı ve sahil bandı düz
 coastal_city = (XX < -EDGE_X + 1) & (XX > -EDGE_X - 72) & (np.abs(ZZ) < EDGE_Z + 50)
-h = np.where(coastal_city, np.where(ZZ < 0, 0.0, np.clip(0.4 - (-EDGE_X - XX) * 0.022, -2, 0.4)), h)
+h = np.where(coastal_city, np.where(ZZ < 0, -0.6, np.clip(0.4 - (-EDGE_X - XX) * 0.022, -2, 0.4)), h)
+# rıhtım betonunun altı: arazi rıhtım yüzeyinin altında kalsın (iç içe titreme olmasın)
+quay_box = (XX < -EDGE_X + 1) & (XX > -EDGE_X - 90) & (ZZ < 4) & (ZZ > -EDGE_Z - 10)
+h = np.where(quay_box, np.minimum(h, -0.6), h)
 # manastır platosu + merdiven rampası
 MON = (180.0, -1000.0, 190.0)
 dm = np.hypot(XX - MON[0], ZZ - MON[1])
@@ -307,7 +310,7 @@ road('Kuzey Yolu', [(1000, 180), (1120, -300), (1260, -760), (1700, -1060), (230
                     (2880, 1300)], 11.0, 'yol', 0.1, start_city=False)
 road('Lunapark Yolu', [(-200, EDGE_Z), (-230, 470)], 9.0, 'yol', 0.08)
 # köprü: şehrin kuzeybatısından Güvenlikli Ada'ya
-BRIDGE = [(-EDGE_X, -300), (-560, -420), (-900, -820), (-960, -880)]
+BRIDGE = [(-400, -EDGE_Z), (-400, -400), (-470, -520), (-640, -690), (-900, -840), (-960, -885)]  # kuzeybatı caddesinin ucundan, limanın dışından
 bp = densify(BRIDGE, 8)
 by = []
 Lb = [0.0]
@@ -564,7 +567,7 @@ POIS = [
     {'id': 'huskulube', 'name': 'Mucit Kulübesi', 'kind': 'cabin', 'pos': [2700, 0, -260]},
     {'id': 'koylar', 'name': 'Ruhlar Koyu', 'kind': 'coves', 'pos': [1450, 0, 4480]},
     {'id': 'orumcek', 'name': 'Örümcek Adası', 'kind': 'island', 'pos': [-760, 0, 2330]},
-    {'id': 'kopru', 'name': 'Kızıl Köprü', 'kind': 'bridge', 'pos': [-730, 14, -620]},
+    {'id': 'kopru', 'name': 'Kızıl Köprü', 'kind': 'bridge', 'pos': [-700, 14, -730]},
 ]
 for p in POIS:
     p['pos'][1] = round(float(max(sample_h(p['pos'][0], p['pos'][2]), p['pos'][1])), 2) if p['kind'] not in ('monastery', 'secure') else p['pos'][1]
@@ -674,12 +677,23 @@ ls = np.array([-1.0, -1.2, 0.8])
 ls /= np.linalg.norm(ls)
 nx, nz = -gx, -gy
 nl = (nx * ls[0] + nz * ls[1] + 1.0 * ls[2]) / np.sqrt(nx * nx + nz * nz + 1)
-shade = np.clip(0.55 + nl * 0.55, 0.35, 1.25)
-mc = C.copy()
-depth = np.clip(-h / 30, 0, 1)
-water = np.stack([0.16 - depth * 0.08, 0.42 - depth * 0.2, 0.6 - depth * 0.2], -1)
-shallow = smoothstep(80, 0, dout)[..., None]
-water = water * (1 - shallow * 0.6) + np.array([0.3, 0.68, 0.72]) * shallow * 0.6
+shade = np.clip(0.88 + nl * 0.22, 0.7, 1.1)       # yumuşak gölgeleme (GTA6 haritası gibi sade)
+# arazi renklerini harita paletine çevir: yeşiller → yumuşak deniz yeşili, kuru alanlar → kum, kar → açık gri
+lum = C[..., 0] * 0.3 + C[..., 1] * 0.59 + C[..., 2] * 0.11
+greenish = (C[..., 1] > C[..., 0] * 1.02) & (C[..., 1] > C[..., 2] * 0.95)
+teal = np.array([0.44, 0.67, 0.56])
+forest = np.array([0.36, 0.58, 0.47])
+sand = np.array([0.86, 0.8, 0.62])
+snow = np.array([0.9, 0.93, 0.95])
+rockc = np.array([0.62, 0.66, 0.6])
+gcol = forest[None, None, :] + (teal - forest)[None, None, :] * np.clip((lum[..., None] - 0.18) / 0.25, 0, 1)
+dry = sand[None, None, :] * (0.88 + 0.12 * np.clip(lum[..., None] / 0.6, 0, 1))
+mc = np.where(greenish[..., None], gcol, dry)
+mc = np.where((lum > 0.72)[..., None], snow[None, None, :], mc)
+mc = mc * (1 - C[..., 3:4] * 0.5) + rockc[None, None, :] * C[..., 3:4] * 0.5 if C.shape[-1] > 3 else mc
+shallow = smoothstep(140, 0, dout)[..., None]
+deep = np.clip(dout / 900.0, 0, 1)[..., None]
+water = np.array([0.33, 0.68, 0.84]) * shallow + (np.array([0.2, 0.47, 0.67]) * (1 - deep) + np.array([0.11, 0.27, 0.45]) * deep) * (1 - shallow)
 mc = np.where(land[..., None], mc * shade[..., None], water)
 img = Image.fromarray((np.clip(mc, 0, 1) * 255).astype(np.uint8)).resize((mw, mh), Image.BICUBIC)
 dr = ImageDraw.Draw(img, 'RGBA')
@@ -689,41 +703,30 @@ def m(x, z):
     return ((x - X0) / STEP * MS, (z - Z0) / STEP * MS)
 
 
-# şehir zemini, bloklar, binalar
-dr.rectangle([m(-EDGE_X, -EDGE_Z), m(EDGE_X, EDGE_Z)], fill=(62, 64, 72, 255))
+# şehir: açık gri zemin, beyaz yollar, gri binalar (GTA6 haritası tarzı)
+dr.rectangle([m(-EDGE_X - 4, -EDGE_Z - 4), m(EDGE_X + 4, EDGE_Z + 4)], fill=(186, 190, 196, 255))
 for b in blocks:
     o = (BLOCK + WALK * 2) * 0.5
     cx, cz = b['c']
-    col_b = {'lunapark': (70, 110, 80, 255), 'konut': (96, 120, 88, 255)}.get(b['d'], (118, 116, 112, 255))
+    col_b = {'lunapark': (150, 196, 170, 255), 'konut': (196, 204, 200, 255)}.get(b['d'], (205, 208, 214, 255))
     dr.rectangle([m(cx - o, cz - o), m(cx + o, cz + o)], fill=col_b)
 for bb in buildings:
     cx, cz = bb['c']
     sw_, sd_ = bb['s']
-    hgt = bb['h']
-    base = {'eski': (168, 92, 70), 'tekno': (150, 170, 196), 'merkez': (160, 168, 186), 'liman': (140, 136, 120),
-            'konut': (226, 214, 196), 'sahil': (232, 200, 206)}.get(bb['d'], (190, 184, 176))
-    if bb.get('glass'):
-        base = (120, 160, 200)
-    off = min(hgt * 0.06, 6) * MS / STEP * 4
-    dr.rectangle([m(cx - sw_ / 2, cz - sd_ / 2), m(cx + sw_ / 2, cz + sd_ / 2)], fill=(40, 40, 48, 160))
-    a0 = m(cx - sw_ / 2, cz - sd_ / 2)
-    a1 = m(cx + sw_ / 2, cz + sd_ / 2)
-    lum = 1.0 + min(hgt, 120) / 300
-    top = tuple(min(255, int(c * lum)) for c in base) + (255,)
-    dr.rectangle([a0[0] - off * 0.5, a0[1] - off, a1[0] - off * 0.5, a1[1] - off], fill=top, outline=(60, 60, 70, 255))
-# şehir yolları
+    shade_b = 178 - min(bb['h'], 150) * 0.25
+    dr.rectangle([m(cx - sw_ / 2, cz - sd_ / 2), m(cx + sw_ / 2, cz + sd_ / 2)], fill=(int(shade_b), int(shade_b + 4), int(shade_b + 12), 255))
 for i in range(-GX, GX + 1):
-    dr.line([m(i * CELL, -CITY_Z - 6), m(i * CELL, CITY_Z + 6)], fill=(236, 236, 240, 255), width=int(ROAD_W / STEP * MS * 1.6))
+    dr.line([m(i * CELL, -CITY_Z - 6), m(i * CELL, CITY_Z + 6)], fill=(250, 251, 252, 255), width=max(2, int(ROAD_W / STEP * MS * 1.2)))
 for j in range(-GZ, GZ + 1):
-    dr.line([m(-CITY_X - 6, j * CELL), m(CITY_X + 6, j * CELL)], fill=(236, 236, 240, 255), width=int(ROAD_W / STEP * MS * 1.6))
-# otoyollar ve yollar
+    dr.line([m(-CITY_X - 6, j * CELL), m(CITY_X + 6, j * CELL)], fill=(250, 251, 252, 255), width=max(2, int(ROAD_W / STEP * MS * 1.2)))
+# yollar: ince gri kenarlı beyaz çizgiler; otoyol daha kalın
 for r in ROADS:
     pts = [m(p[0], p[2]) for p in r['pts']]
-    wdt = max(3, int(r['width'] / STEP * MS * 1.5))
-    dr.line(pts, fill=(30, 30, 36, 255), width=wdt + 3, joint='curve')
-    fillc = {'otoyol': (250, 214, 90, 255), 'kopru': (230, 80, 70, 255)}.get(r['kind'], (240, 240, 244, 255))
+    wdt = max(2, int(r['width'] / STEP * MS * (1.3 if r['kind'] == 'otoyol' else 1.0)))
+    dr.line(pts, fill=(120, 128, 130, 200), width=wdt + 2, joint='curve')
+    fillc = {'otoyol': (255, 250, 226, 255), 'kopru': (236, 238, 242, 255)}.get(r['kind'], (248, 249, 250, 255))
     dr.line(pts, fill=fillc, width=wdt, joint='curve')
 dr.line([m(*STAIR[0]), m(*STAIR[1])], fill=(200, 180, 150, 255), width=3)
-img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=60))
+img = img.filter(ImageFilter.UnsharpMask(radius=1.0, percent=40))
 img.save(os.path.join(OUT, 'map.png'), optimize=True)
 print('tamam', W, H, 'yol', len(ROADS), 'bina', len(buildings))

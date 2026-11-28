@@ -27,6 +27,7 @@ var weapon_l: Label
 var big: Label
 var _big_t := 0.0
 var overlay: Control
+var _bars_c: Control
 
 
 func _ready() -> void:
@@ -41,9 +42,57 @@ func _ready() -> void:
 	minimap.offset_bottom = -46
 	minimap.offset_left = 28
 	minimap.offset_right = 358
-	minimap.clip_contents = true
 	minimap.draw.connect(_draw_map)
-	add_child(minimap)
+	# yuvarlak köşeli çerçeve: mini harita bu şeklin içine kırpılır
+	var frame := Panel.new()
+	var fsb := StyleBoxFlat.new()
+	fsb.bg_color = Color(0.08, 0.2, 0.3)
+	fsb.set_corner_radius_all(16)
+	frame.add_theme_stylebox_override("panel", fsb)
+	frame.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
+	frame.anchor_top = 1.0
+	frame.anchor_bottom = 1.0
+	frame.offset_left = 28
+	frame.offset_right = 358
+	frame.offset_top = -262
+	frame.offset_bottom = -52
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(frame)
+	minimap.anchor_top = 0.0
+	minimap.anchor_bottom = 1.0
+	minimap.anchor_right = 1.0
+	minimap.offset_top = 0
+	minimap.offset_bottom = 0
+	minimap.offset_left = 0
+	minimap.offset_right = 0
+	frame.add_child(minimap)
+	var border := Panel.new()
+	var bsb := StyleBoxFlat.new()
+	bsb.draw_center = false
+	bsb.set_corner_radius_all(16)
+	bsb.set_border_width_all(2)
+	bsb.border_color = Color(1, 1, 1, 0.35)
+	bsb.shadow_color = Color(0, 0, 0, 0.35)
+	bsb.shadow_size = 8
+	border.add_theme_stylebox_override("panel", bsb)
+	border.anchor_top = 1.0
+	border.anchor_bottom = 1.0
+	border.offset_left = 28
+	border.offset_right = 358
+	border.offset_top = -262
+	border.offset_bottom = -52
+	border.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(border)
+	_bars_c = Control.new()
+	_bars_c.anchor_top = 1.0
+	_bars_c.anchor_bottom = 1.0
+	_bars_c.offset_left = 28
+	_bars_c.offset_right = 358
+	_bars_c.offset_top = -46
+	_bars_c.offset_bottom = -16
+	_bars_c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bars_c.draw.connect(_draw_bars)
+	add_child(_bars_c)
 	var bars := HBoxContainer.new()
 	bars.anchor_top = 1.0
 	bars.anchor_bottom = 1.0
@@ -70,6 +119,7 @@ func _ready() -> void:
 		else:
 			armor_bar = pb
 	bars_box = bars
+	bars.visible = false
 	stamina_bar = ProgressBar.new()
 	stamina_bar.show_percentage = false
 	stamina_bar.anchor_top = 1.0
@@ -85,6 +135,7 @@ func _ready() -> void:
 	stamina_bar.add_theme_stylebox_override("fill", sfg)
 	stamina_bar.add_theme_stylebox_override("background", sbg)
 	add_child(stamina_bar)
+	stamina_bar.visible = false
 	overlay = Control.new()
 	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -246,6 +297,7 @@ func _process(_d: float) -> void:
 		weapon_l.text = ("%s%s" % [String(w.name).to_upper(), am]) if not player.car else ""
 	stars.queue_redraw()
 	overlay.queue_redraw()
+	_bars_c.queue_redraw()
 	_area_check -= _d
 	if _area_check <= 0.0 and world:
 		_area_check = 0.5
@@ -420,3 +472,38 @@ func _draw_overlay() -> void:
 		overlay.draw_arc(c, 26.0, -PI * 0.5, -PI * 0.5 + TAU * wt.arrest_progress(), 32, Color(0.4, 0.6, 1.0), 5.0)
 		if Game.font_ui:
 			overlay.draw_string(Game.font_ui, c + Vector2(-260, 52), "Tutuklanıyorsun — kaç ya da karşı koy!", HORIZONTAL_ALIGNMENT_CENTER, 520, 18, Color.WHITE)
+
+
+func _bar(x: float, w: float, v: float, col: Color, icon: String) -> void:
+	## yuvarlak uçlu, koyu zeminli çubuk + küçük simge
+	var y := 10.0
+	var h := 9.0
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0, 0, 0, 0.55)
+	sb.set_corner_radius_all(5)
+	_bars_c.draw_style_box(sb, Rect2(x, y, w, h))
+	if v > 0.001:
+		var fb := StyleBoxFlat.new()
+		fb.bg_color = col
+		fb.set_corner_radius_all(5)
+		_bars_c.draw_style_box(fb, Rect2(x + 1, y + 1, maxf(6.0, (w - 2) * clampf(v, 0.0, 1.0)), h - 2))
+	var c := Vector2(x - 2, y + h * 0.5)
+	match icon:
+		"can":
+			_bars_c.draw_circle(c + Vector2(-9, -1.5), 3.2, col)
+			_bars_c.draw_circle(c + Vector2(-4.5, -1.5), 3.2, col)
+			_bars_c.draw_colored_polygon(PackedVector2Array([c + Vector2(-12.2, -0.5), c + Vector2(-1.3, -0.5), c + Vector2(-6.75, 5.5)]), col)
+		"zirh":
+			_bars_c.draw_colored_polygon(PackedVector2Array([c + Vector2(-12, -5), c + Vector2(-2, -5), c + Vector2(-2, 0), c + Vector2(-7, 5), c + Vector2(-12, 0)]), col)
+		"guc":
+			_bars_c.draw_colored_polygon(PackedVector2Array([c + Vector2(-5, -6), c + Vector2(-11, 1), c + Vector2(-7, 1), c + Vector2(-9, 6), c + Vector2(-2, -1), c + Vector2(-6, -1)]), col)
+
+
+func _draw_bars() -> void:
+	if player == null or player.combat == null:
+		return
+	var cb := player.combat
+	var low := cb.health < 30.0 and int(Time.get_ticks_msec() / 300) % 2 == 0
+	_bar(16.0, 140.0, cb.health / 100.0, Color(1.0, 0.3, 0.35) if low else Color(0.35, 0.9, 0.5), "can")
+	_bar(178.0, 72.0, cb.armor / 100.0, Color(0.35, 0.65, 1.0), "zirh")
+	_bar(272.0, 58.0, cb.stamina / maxf(cb.max_stamina, 1.0), Color(1.0, 0.82, 0.3), "guc")

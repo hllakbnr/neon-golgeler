@@ -298,5 +298,32 @@
    "who": "dj_k",
    "text": "Gece Dalgası ile sakin kal, şehir seninle."
   }
+ ],
+ "intro_story": [
+  {
+   "id": "intro_story_1",
+   "who": "usta",
+   "text": "Bu kıtada dört element, yüzyıllar boyunca dengede durdu."
+  },
+  {
+   "id": "intro_story_2",
+   "who": "usta",
+   "text": "Kasırga Manastırı'nın ustaları bu dengeyi koruyacak ninjaları yetiştirdi."
+  },
+  {
+   "id": "intro_story_3",
+   "who": "usta",
+   "text": "Ama Neon Şehir büyüdükçe, ışıklarının altındaki gölgeler de büyüdü."
+  },
+  {
+   "id": "intro_story_4",
+   "who": "usta",
+   "text": "Şimdi sokaklarda adı bilinmeyen bir çete, elementlerin gücünü ele geçirmenin yolunu arıyor."
+  },
+  {
+   "id": "intro_story_5",
+   "who": "kaan",
+   "text": "Ben Kaan Demir. Metal elementinin ustasıyım. Ve uzun bir aradan sonra, eve döndüm."
+  }
  ]
 }

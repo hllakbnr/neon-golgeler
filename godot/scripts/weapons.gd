@@ -5,21 +5,21 @@ class_name Weapons
 
 const LIST := {
 	"yumruk": {"name": "Yumruk", "kind": "melee", "dmg": 9.0, "range": 1.5, "speed": 1.15, "cost": 7.0,
-		"combo": ["punch_jab", "punch_cross", "hook"], "heavy": "kick", "icon": "✊", "price": 0},
-	"boru": {"name": "Demir Boru", "kind": "melee", "dmg": 17.0, "range": 1.9, "speed": 1.0, "cost": 10.0,
-		"combo": ["sword_a", "sword_b"], "heavy": "sword_c", "icon": "▬", "price": 150},
+		"combo": ["punch_jab", "punch_cross", "hook"], "heavy": "hook", "fx": "dash", "idle": "idle", "move": 1.0, "price": 0},
+	"boru": {"name": "Demir Boru", "kind": "melee", "dmg": 17.0, "range": 1.9, "speed": 0.9, "cost": 10.0,
+		"combo": ["sword_attack", "sword_c"], "heavy": "sword_attack", "fx": "smash", "idle": "sword_idle", "move": 0.92, "price": 150},
 	"sopa": {"name": "Bo Sopası", "kind": "melee", "dmg": 15.0, "range": 2.3, "speed": 1.05, "cost": 9.0,
-		"combo": ["sword_a", "sword_b", "sword_c"], "heavy": "sword_combo", "icon": "│", "price": 300},
-	"nuncaku": {"name": "Nunçaku", "kind": "melee", "dmg": 12.0, "range": 1.8, "speed": 1.35, "cost": 7.0,
-		"combo": ["sword_a", "sword_b", "sword_c", "sword_a"], "heavy": "sword_combo", "icon": "⫶", "price": 450},
+		"combo": ["sword_a", "sword_b", "sword_c"], "heavy": "sword_c", "fx": "spin", "idle": "sword_idle", "move": 0.97, "price": 300},
+	"nuncaku": {"name": "Nunçaku", "kind": "melee", "dmg": 12.0, "range": 1.8, "speed": 1.45, "cost": 7.0,
+		"combo": ["punch_jab", "sword_b", "punch_cross", "sword_a"], "heavy": "sword_combo", "fx": "flurry", "idle": "idle", "move": 1.05, "twirl": true, "price": 450},
 	"katana": {"name": "Katana", "kind": "melee", "dmg": 26.0, "range": 2.1, "speed": 1.1, "cost": 11.0,
-		"combo": ["sword_a", "sword_b", "sword_c"], "heavy": "sword_combo", "icon": "⚔", "price": 1200},
-	"zincir": {"name": "Zincir", "kind": "melee", "dmg": 14.0, "range": 2.6, "speed": 0.95, "cost": 10.0,
-		"combo": ["sword_a", "sword_b"], "heavy": "sword_combo", "icon": "∞", "price": 400},
+		"combo": ["sword_a", "sword_b", "sword_c"], "heavy": "sword_attack", "fx": "dash", "idle": "sword_idle", "move": 1.0, "price": 1200},
+	"zincir": {"name": "Zincir", "kind": "melee", "dmg": 14.0, "range": 2.7, "speed": 0.95, "cost": 10.0,
+		"combo": ["sword_c", "sword_b"], "heavy": "sword_c", "fx": "spin", "idle": "idle", "move": 1.0, "twirl": true, "price": 400},
 	"shuriken": {"name": "Shuriken", "kind": "throw", "dmg": 18.0, "range": 30.0, "speed": 1.6, "cost": 5.0,
-		"combo": ["throw"], "heavy": "throw", "icon": "✦", "price": 20},
+		"combo": ["throw"], "heavy": "throw", "fx": "spread", "idle": "idle", "move": 1.0, "price": 20},
 	"sok": {"name": "Şok Çubuğu", "kind": "melee", "dmg": 6.0, "range": 1.7, "speed": 1.2, "cost": 8.0,
-		"combo": ["sword_a", "sword_b"], "heavy": "sword_c", "icon": "ϟ", "price": 700, "stun": 2.5},
+		"combo": ["punch_cross", "pistol_shoot"], "heavy": "spell", "fx": "zap", "idle": "pistol_idle", "move": 1.0, "price": 700, "stun": 2.5},
 }
 const ORDER := ["yumruk", "boru", "sopa", "nuncaku", "katana", "zincir", "shuriken", "sok"]
 
