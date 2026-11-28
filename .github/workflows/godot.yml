@@ -8,7 +8,7 @@ permissions: { contents: write }
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 110
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
       - name: Godot 4.3 + dışa aktarma şablonları
@@ -92,7 +92,7 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq xvfb mesa-vulkan-drivers libvulkan1 > /dev/null
           mkdir -p shots
           cp /tmp/00_dokular.png shots/ 2>/dev/null || true
-          timeout 3300 xvfb-run -a -s "-screen 0 1600x900x24" godot --path godot --rendering-driver vulkan --resolution 1600x900 -- --shots=$PWD/shots 2>&1 | grep -vE "^\s*$" | tail -120 || true
+          timeout 5000 xvfb-run -a -s "-screen 0 1600x900x24" godot --path godot --rendering-driver vulkan --resolution 1600x900 -- --shots=$PWD/shots 2>&1 | grep -vE "^\s*$" | tail -120 || true
           ls -la shots || true
           if [ -f shots/15_duraklat.png ]; then echo "ok=1" >> "$GITHUB_OUTPUT"; fi
       - name: Ekran görüntülerini ci-shots dalına gönder
