@@ -37,7 +37,7 @@ def read(path):
         p += 16
         fl = struct.unpack_from('<I', data, p)[0]
         p += 4
-        start = (off + file_base + fo) if rel else (off + fo)
+        start = file_base + fo + (off if rel else 0)
         entries.append({'path': name, 'size': sz, 'md5': md5.hex(), 'flags': fl, 'data': data[start:start + sz]})
     return {'ver': (vmaj, vmin, vpat), 'flags': flags, 'entries': entries}
 

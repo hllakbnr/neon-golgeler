@@ -456,7 +456,7 @@ def main():
             w.writeframes(pcm.tobytes())
         out = os.path.join(OUT, name + '.ogg')
         try:
-            r = subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', wav, '-c:a', 'libvorbis', '-q:a', '3', out])
+            r = subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', wav, '-c:a', 'libvorbis', '-q:a', '3', '-fflags', '+bitexact', '-flags:a', '+bitexact', out])
             ok = r.returncode == 0
         except FileNotFoundError:
             ok = False

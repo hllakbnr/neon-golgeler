@@ -50,6 +50,17 @@ jobs:
         with:
           path: ~/.local/share/tts
           key: xtts-v2-model
+      # parçalı güncelleme: içe aktarılmış varlıklar ve sesler derlemeler arasında aynı kalsın
+      # (Godot her temiz içe aktarmada yeni kimlik üretir; önbellek olmadan her sürüm tam indirme olur)
+      - uses: actions/cache@v4
+        with:
+          path: |
+            godot/.godot
+            godot/**/*.import
+            godot/assets/voice
+            godot/.voicecache.json
+          key: godot-import-${{ github.run_number }}
+          restore-keys: godot-import-
       - name: Türkçe diyalog seslendirme (XTTS v2, yedek Piper)
         env: { COQUI_TOS_AGREED: "1" }
         run: |
@@ -138,4 +149,5 @@ jobs:
             godot/build/NeonGolgeler.exe
             godot/build/version.json
             godot/build/base.json
+            godot/build/yama.pck
             godot/build/yama.pck

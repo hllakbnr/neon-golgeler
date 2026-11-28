@@ -11,11 +11,23 @@ import pck
 
 full, ver, out, exe = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
 URL = 'https://github.com/hllakbnr/neon-golgeler/releases/download/godot-guncel/base.json'
-CRIT = ('res://project.binary', 'res://.godot/global_script_class_cache.cfg', 'res://.godot/uid_cache.bin',
+# uid_cache.bin kritik değil: yeni varlıklar yola göre de yüklenir (Godot uid bulamazsa yola düşer)
+CRIT = ('res://project.binary', 'res://.godot/global_script_class_cache.cfg',
         'res://scripts/patcher.gd', 'res://scripts/patcher.gdc', 'res://scripts/patcher.gd.remap')
 
+
+def fp(e):
+    # Godot 4.3 .gdc (ikili betik) her dışa aktarmada farklı bayt üretir → kaynağın parmak izi kullanılır
+    path = e['path']
+    if path.endswith('.gdc'):
+        src = path[len('res://'):-1]
+        if os.path.exists(src):
+            return 'src:' + pck.hashlib.md5(open(src, 'rb').read()).hexdigest()
+    return pck.hashlib.md5(e['data']).hexdigest()
+
+
 p = pck.read(full)
-cur = {e['path']: pck.hashlib.md5(e['data']).hexdigest() for e in p['entries']}
+cur = {e['path']: fp(e) for e in p['entries']}
 total = sum(len(e['data']) for e in p['entries'])
 base = None
 try:
@@ -28,18 +40,20 @@ except Exception as ex:
 
 new_base = True
 changed = []
-if base and base.get('engine') == list(p['ver']):
+if base and base.get('engine') == list(p['ver']) and base.get('fmt') == 2:
     old = base.get('files', {})
     crit = [k for k in CRIT if old.get(k) != cur.get(k)]
     changed = [k for k, v in cur.items() if old.get(k) != v]
     size = sum(len(e['data']) for e in p['entries'] if e['path'] in changed)
     print('değişen dosya:', len(changed), 'boyut MB %.2f' % (size / 1e6), 'kritik:', crit)
+    for k in changed[:80]:
+        print('  ~', k)
     if not crit and size < total * 0.6 and ver - int(base['base']) < 60:
         new_base = False
 
 info = {'version': ver, 'file': exe, 'notes': 'Neon Gölgeler sürüm %d' % ver}
 if new_base:
-    base = {'base': ver, 'engine': list(p['ver']), 'files': cur}
+    base = {'base': ver, 'engine': list(p['ver']), 'fmt': 2, 'files': cur}
     info['base'] = ver
     print('yeni taban:', ver)
 else:

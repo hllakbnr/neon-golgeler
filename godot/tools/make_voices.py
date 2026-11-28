@@ -9,7 +9,7 @@ karaktere göre çeşitlendirilir) → XTTS v2 (yalnız hikâye satırları) →
 Not: edge-tts çevrim içi bir hizmettir; kişisel deneme sürümleri içindir. Ticari sürümde lisanslı
 seslendirme/oyuncu kullanılmalı.
 """
-import json, os, subprocess, sys, urllib.request
+import hashlib, json, os, subprocess, sys, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, '..')
@@ -135,6 +135,13 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     n = 0
     all_lines = [l for lines in data.values() for l in lines]
+    # önbellek: metni değişmeyen satır yeniden seslendirilmez (parçalı güncelleme küçük kalsın)
+    man_p = os.path.join(ROOT, '.voicecache.json')
+    man = json.load(open(man_p)) if os.path.exists(man_p) else {}
+    key = lambda l: hashlib.md5((l['text'] + '|' + l.get('who', '')).encode('utf-8')).hexdigest()
+    have = lambda l: any(os.path.exists(os.path.join(OUT, l['id'] + x)) for x in ('.ogg', '.wav'))
+    all_lines = [l for l in all_lines if not (man.get(l['id']) == key(l) and have(l))]
+    print('Önbellekte olmayan satır:', len(all_lines))
     ed = edge_all(all_lines)
     rest = [l for l in all_lines if l['id'] not in ed]
     # XTTS yavaştır: yalnızca hikâye/telefon satırları (yaya tepkileri ve DJ anonsları Piper'a kalır)
@@ -162,7 +169,7 @@ def main():
                 af = 'asetrate=22050*%.3f,aresample=22050,atempo=%.3f,%s' % (pitch, 1.0 / pitch, af)
             out = os.path.join(OUT, l['id'] + '.ogg')
             try:
-                r = subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', wav, '-af', af, '-c:a', 'libvorbis', '-q:a', '5', out])
+                r = subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', wav, '-af', af, '-c:a', 'libvorbis', '-q:a', '5', '-fflags', '+bitexact', '-flags:a', '+bitexact', out])
                 ok = r.returncode == 0
             except FileNotFoundError:
                 ok = False
@@ -173,7 +180,9 @@ def main():
                 ok = True
             if ok:
                 n += 1
+                man[l['id']] = key(l)
                 print('  ✓', l['id'], who)
+    json.dump(man, open(man_p, 'w'))
     print('Seslendirilen satır:', n)
 
 
