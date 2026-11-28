@@ -1,0 +1,17 @@
+✓ Oyuncu bina duvarından geçmiyor  (0 kare bina içinde)
+✓ Yaya katı (içinden geçilmez)  (en yakın 0.62 m)
+✓ Yayalar bina içine girmiyor  (0 ihlal)
+✓ Trafik: araçlar iç içe girmiyor (60 sn)  (0 çakışma )
+✓ Trafik: araç üst üste binmiyor  (0)
+✓ Araba sürüşü: hızlanıyor  (30.7 m, 19.3 m/s)
+✓ Araba sürüşü: devrilmiyor
+✓ Araçtan inince oyuncu yerde
+✓ Eşya kırılıyor ve fizikle düşüyor
+✓ Kasırgada karakter gizleniyor
+✓ Kasırga arabaları fırlatmıyor  (en yüksek 0.0 m)
+✓ İç mekânlara girip çıkılıyor, içeride kalınıyor
+✓ Ejderha uçuyor
+✓ Ejderhadan inince bulunduğun yere iniliyor  (y=0.1 zemin=0.2)
+✓ Polis gözümüzün önünde belirmiyor  (0 görünür doğma)
+✓ Harita, telefon, silah çarkı açılıp kapanıyor
+SONUÇ: 16 sınama, 0 hata
