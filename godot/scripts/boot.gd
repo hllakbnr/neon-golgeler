@@ -17,6 +17,10 @@ func _ready() -> void:
 		await _pose_test()
 		get_tree().quit()
 		return
+	if OS.get_cmdline_user_args().has("--selftest"):
+		Game.test_mode = true
+		_self_test()
+		return
 	if OS.get_cmdline_user_args().has("--buildtest"):
 		await _build_test()
 		get_tree().quit()
@@ -214,7 +218,7 @@ func _start_game() -> void:
 	playing = true
 	menu_cam.current = false
 	player.cam.make_current()
-	if Game.shots_dir == "":
+	if Game.shots_dir == "" and not Game.test_mode:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		var intro := Intro.new()
 		intro.world = world
@@ -224,6 +228,13 @@ func _start_game() -> void:
 
 
 func _unhandled_input(e: InputEvent) -> void:
+	if playing and e is InputEventKey and e.pressed and not e.is_echo() and (e as InputEventKey).keycode == KEY_F9 and not get_tree().paused:
+		var br := BugReport.new()
+		br.player = player
+		br.world = world
+		add_child(br)
+		get_viewport().set_input_as_handled()
+		return
 	if playing and e.is_action_pressed("map") and not get_tree().paused:
 		open_map()
 		get_viewport().set_input_as_handled()
@@ -378,6 +389,23 @@ func _pose_test() -> void:
 		await get_tree().process_frame
 	print("PANEL geçiş tamam mod=", ap.preview.mode)
 	await Game.shot("poz_panel")
+
+
+func _self_test() -> void:
+	await get_tree().process_frame
+	world = World.new()
+	add_child(world)
+	await world.build(Callable())
+	menu_cam = Camera3D.new()
+	world.add_child(menu_cam)
+	menu = MainMenu.new()
+	add_child(menu)
+	await _start_game()
+	var st := SelfTest.new()
+	st.boot = self
+	add_child(st)
+	await st.run()
+	get_tree().quit()
 
 
 func _build_test() -> void:

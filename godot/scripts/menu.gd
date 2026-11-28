@@ -85,7 +85,7 @@ func build() -> void:
 		items.append(["Harita", "Tüm harita: yerler, kategoriler, işaret ve GPS rotası.", func(): map_pressed.emit()])
 	items.append(["Fotoğraf Stüdyosu", "Kamerayı serbest bırak, kareyi yakala (yakında).", func(): pass])
 	items.append(["Ayarlar", "Oynanış, görüntü, kamera ve ses ayarları.", func(): settings_ui.visible = true; settings_ui.grab()])
-	items.append(["Yardım", "WASD hareket · Shift koş · Boşluk zıpla · F araç · Fare kamera · T zamanı hızlandır · Esc menü", func(): pass])
+	items.append(["Yardım", "WASD hareket · Shift koş · Boşluk zıpla · F araç · Fare kamera · T zamanı hızlandır · Esc menü · F9 hata bildir", func(): pass])
 	items.append(["Çıkış", "Oyundan çık.", func(): get_tree().quit()])
 	for it in items:
 		var b := Button.new()

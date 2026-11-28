@@ -86,6 +86,11 @@ jobs:
           mkdir -p build
           timeout 900 godot --headless --export-release "Windows Desktop" build/NeonGolgeler.exe 2>&1 | tail -30
           ls -la build
+      - name: Otomatik bot sınamaları (selftest)
+        run: |
+          mkdir -p shots
+          NG_ST_OUT=$PWD/shots/selftest.txt timeout 900 godot --headless --path godot -- --selftest 2>&1 | grep -E "TEST|SONUÇ|SCRIPT ERROR" || true
+          cat shots/selftest.txt 2>/dev/null || echo "selftest raporu yok"
       - name: Ekran görüntüleri (yazılım Vulkan)
         id: shots
         run: |

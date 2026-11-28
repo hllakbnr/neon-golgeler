@@ -224,12 +224,18 @@ func _recover() -> void:
 	var ni := Vector2i(clampi(int(round(global_position.x / world.CELL)), -world.GX, world.GX), clampi(int(round(global_position.z / world.CELL)), -world.GZ, world.GZ))
 	# başka aracın üstünde/içinde kaldıysa ya da yoldan çıktıysa şeride yerleştir
 	var overlap := false
+	var push := Vector3.ZERO
 	for n in get_tree().get_nodes_in_group("traffic") + get_tree().get_nodes_in_group("cars"):
 		if n != self and (n as Node3D).global_position.distance_to(global_position) < 3.2:
 			overlap = true
-			break
+			var sep: Vector3 = global_position - (n as Node3D).global_position
+			sep.y = 0.0
+			push += sep.normalized() if sep.length() > 0.05 else global_transform.basis.x
 	if overlap and not far:
-		crashed = 1.0
+		# oyuncu yakında: ışınlamak yerine yavaşça birbirinden ayrıl
+		global_position += push.normalized() * 0.8
+		global_position.y = maxf(global_position.y, 0.0)
+		crashed = 0.4
 		return
 	from = ni
 	to = ni

@@ -54,6 +54,7 @@ var has_waypoint := false
 var waypoint := Vector3.ZERO
 var route := PackedVector3Array()
 var keyart: Array = []     # yükleme ekranı görselleri
+var test_mode := false     # otomatik testler (giriş sineması vb. atlanır)
 var hud: Node = null       # oyun içi arayüz (bildirimler için)
 var base_ts := 1.0         # silah çarkı vb. yavaş çekim taban hızı
 var _hitstop := 0
